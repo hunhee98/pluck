@@ -70,6 +70,18 @@ Reproducible. Run nightly in CI. Public dashboard. See [docs/BENCHMARKS.md](docs
 
 _Numbers above are projection targets validated against the harness in `crates/pluck-bench`._
 
+## Performance
+
+AST chunker microbenchmarks (TypeScript, M-series Mac, `cargo bench --bench chunker`):
+
+| Workload | Source size | Time | Throughput |
+|----------|-------------|------|-----------|
+| Small  | 10 lines, 3 symbols | **2.96 ms** | — (dominated by parser + query setup) |
+| Medium | 500 lines, 100 fns  | **4.24 ms** | ~118 KLOC/s |
+| Large  | 5000 lines, 1000 fns | **18.59 ms** | ~269 KLOC/s |
+
+Reported as median of 100 samples (Criterion). Most of the small-workload cost is the one-time `Query` compilation; future work will cache parser+query per language for sub-ms repeated calls.
+
 ## Architecture
 
 ```
