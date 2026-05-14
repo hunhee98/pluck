@@ -68,3 +68,21 @@ jobs:
         with:
           name: scenario-fix-auth-token-expiry
           path: benchmarks/results/
+
+  # Regression gate: re-run the gated benches, parse their stdout, and
+  # fail if any measurement falls outside its per-metric tolerance
+  # versus `benchmarks/baseline.json`. Runs in its own job so a single
+  # regressed metric doesn't block the artifact uploads above (which
+  # are useful for diffing even when a metric drifts).
+  gate:
+    name: regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install ripgrep (runtime dep for pluck.grep tests)
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Run regression gate
+        run: python3 scripts/regression-gate.py

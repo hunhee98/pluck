@@ -1,0 +1,51 @@
+{
+  "version": "1",
+  "frozen_at_commit": "45a9e47",
+  "frozen_at_date": "2026-05-15",
+  "_notes": [
+    "Tolerances are generous on time metrics because CI hardware varies wildly",
+    "(GitHub runners are slower than M-series Macs); functional metrics use a",
+    "tight tolerance because they're properties of the algorithm, not the host.",
+    "regression_direction: 'higher' means a larger measured value is bad;",
+    "'lower' means a smaller measured value is bad."
+  ],
+  "metrics": {
+    "chunker_medium_ms_p50": {
+      "value": 4.24,
+      "tolerance_pct": 100,
+      "regression_direction": "higher",
+      "unit": "ms",
+      "source": "bench chunker — chunk_medium (500 lines) median",
+      "note": "100% tolerance accommodates CI runner variance; absolute regression > 8 ms still fails."
+    },
+    "indexer_files_per_sec_medium": {
+      "value": 386,
+      "tolerance_pct": 60,
+      "regression_direction": "lower",
+      "unit": "files/sec",
+      "source": "bench indexer — medium (500 files) files/s column"
+    },
+    "warm_search_p50_ms_medium": {
+      "value": 0.06,
+      "tolerance_pct": 200,
+      "regression_direction": "higher",
+      "unit": "ms",
+      "source": "bench indexer — medium (500 files) Search warm p50",
+      "note": "Wide tolerance: <1 ms is the invariant; we only care that it's not >1 ms."
+    },
+    "freshness_p50_ms_medium": {
+      "value": 183,
+      "tolerance_pct": 50,
+      "regression_direction": "higher",
+      "unit": "ms",
+      "source": "bench freshness — medium (500 files) Save → search-visible p50"
+    },
+    "session_dedup_session_savings_pct": {
+      "value": 44,
+      "tolerance_pct": 25,
+      "regression_direction": "lower",
+      "unit": "%",
+      "source": "bench session_dedup — total session savings (Σ row)"
+    }
+  }
+}
