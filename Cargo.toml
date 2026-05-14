@@ -28,9 +28,14 @@ tree-sitter-go = "0.21"
 tantivy = "0.26"
 rusqlite = { version = "0.31", features = ["bundled"] }
 
-# Semantic
-ort = "2.0.0-rc.12"
+# Semantic — potion-code-16M is a static (model2vec-style) embedder, not a
+# transformer, so we don't need ONNX at runtime. Just the embedding matrix
+# (safetensors), the HuggingFace tokenizer, and ndarray for the matmul.
+tokenizers = "0.20"
+safetensors = "0.4"
+hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
 ndarray = "0.15"
+ort = "2.0.0-rc.12"  # reserved for Phase 4 LLM-driven runners; not wired into core today
 
 # MCP
 rmcp = "1.7"

@@ -113,6 +113,32 @@ _Numbers above are projection targets validated against the harness in `crates/p
 
 ## Performance
 
+### Hybrid (BM25 + semantic) recall
+
+`pluck.search` can attach a static embedding encoder
+(`minishlab/potion-base-32M`, 32 M params, downloaded on first run and
+cached under `~/.pluck/models/`). The semantic stage is a lookup-based
+model — no transformer, no ONNX, no GPU — so a single encode stays
+under a millisecond on CPU.
+
+The fusion is plain Reciprocal Rank Fusion (`1 / (60 + rank)`) over the
+top-K candidates from each side. The point: BM25 misses on
+natural-language queries get rescued by the semantic side without
+slowing the keyword-match cases. `PLUCK_RUN_MODEL_TESTS=1 cargo bench
+-p pluck-core --bench hybrid`:
+
+| Query | Target chunk | BM25 rank | Hybrid rank |
+|-------|--------------|----------:|------------:|
+| `auth token expiry`            | `validateBearer`     | miss | **#4** |
+| `payment processing for user`  | `chargePrimaryCard`  | miss | **#1** |
+| `rate limit enforcement`       | `tooManyRequests`    | miss | **#1** |
+
+**Recall@10: BM25-only 0/3, hybrid 3/3.** Each fixture deliberately
+strips the literal query keywords from the target chunk, so BM25 has
+nothing to match — the entire signal is semantic. The encoder is
+optional; PluckIndex without it falls through to the existing BM25
+search path with no behavior change.
+
 ### Token savings — `pluck.search` vs `rg` / `cat`
 
 Measured against a synthetic 92-file TypeScript repo: 12 subject-matter

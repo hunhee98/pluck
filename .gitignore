@@ -26,3 +26,8 @@ Cargo.lock.bak
 
 # Internal-only notes (competitor analysis, drafts, etc.) — never published.
 /docs/internal/
+
+# Claude Code
+CLAUDE.md
+.mcp.json
+.claude/

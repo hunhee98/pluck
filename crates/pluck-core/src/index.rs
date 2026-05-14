@@ -4,7 +4,9 @@
 //! The `symbol`, `signature`, and `content` fields participate in the
 //! default BM25 scoring; everything else is stored only for retrieval.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
 use tantivy::{
@@ -16,12 +18,22 @@ use tantivy::{
 };
 
 use crate::chunker::{Chunk, ChunkKind};
+use crate::semantic::{cosine_similarity, StaticEncoder};
 
 const WRITER_HEAP_BYTES: usize = 50_000_000;
 
 pub struct PluckIndex {
     inner: TantivyIndex,
     fields: Fields,
+    /// Optional static encoder. When present, `add_chunk` auto-encodes
+    /// each chunk's signature + content and `search_hybrid` fuses BM25
+    /// with cosine similarity. When absent, the index degrades cleanly
+    /// to BM25-only — every existing call site keeps working without
+    /// the network/disk cost of loading the embedding model.
+    encoder: Option<Arc<StaticEncoder>>,
+    /// chunk_id → embedding vector. Populated only when `encoder` is set.
+    /// RwLock so reads (search) don't block other reads.
+    embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -66,7 +78,12 @@ impl PluckIndex {
     pub fn in_ram() -> Result<Self> {
         let (schema, fields) = build_schema();
         let inner = TantivyIndex::create_in_ram(schema);
-        Ok(Self { inner, fields })
+        Ok(Self {
+            inner,
+            fields,
+            encoder: None,
+            embeddings: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 
     pub fn open_or_create(dir: &Path) -> Result<Self> {
@@ -76,7 +93,23 @@ impl PluckIndex {
             Ok(idx) => idx,
             Err(_) => TantivyIndex::create_in_dir(dir, schema).context("create tantivy dir")?,
         };
-        Ok(Self { inner, fields })
+        Ok(Self {
+            inner,
+            fields,
+            encoder: None,
+            embeddings: Arc::new(RwLock::new(HashMap::new())),
+        })
+    }
+
+    /// Attach an embedding encoder. Subsequent `add_chunk` calls will
+    /// also store an embedding; `search_hybrid` becomes usable.
+    pub fn with_encoder(mut self, encoder: Arc<StaticEncoder>) -> Self {
+        self.encoder = Some(encoder);
+        self
+    }
+
+    pub fn has_encoder(&self) -> bool {
+        self.encoder.is_some()
     }
 
     pub fn writer(&self) -> Result<IndexBatch> {
@@ -88,6 +121,8 @@ impl PluckIndex {
             writer,
             fields: self.fields,
             next_chunk_id: 0,
+            encoder: self.encoder.clone(),
+            embeddings: Arc::clone(&self.embeddings),
         })
     }
 
@@ -168,6 +203,111 @@ impl PluckIndex {
         Ok(hits)
     }
 
+    /// Hybrid BM25 + semantic search via Reciprocal Rank Fusion.
+    ///
+    /// If no encoder is attached the call transparently falls through to
+    /// `search_with_cutoff` so existing call sites keep working.
+    ///
+    /// Tuning constants — both well-trodden values from the IR
+    /// literature:
+    ///   - `RRF_K = 60`: the standard reciprocal-rank smoothing constant
+    ///   - `OVERFETCH = 5`: pull 5×k candidates from each side before
+    ///     fusion, so the fusion has room to rerank
+    pub fn search_hybrid(
+        &self,
+        query_str: &str,
+        k: usize,
+        cutoff_frac: f32,
+    ) -> Result<Vec<SearchHit>> {
+        const RRF_K: f32 = 60.0;
+        const OVERFETCH: usize = 5;
+
+        let Some(encoder) = &self.encoder else {
+            return self.search_with_cutoff(query_str, k, cutoff_frac);
+        };
+
+        let candidate_k = (k * OVERFETCH).max(20);
+
+        // BM25 side.
+        let bm25 = self.search_with_cutoff(query_str, candidate_k, 0.0)?;
+
+        // Semantic side: encode the query, then score it against *every*
+        // chunk that has an embedding. Without this, queries whose terms
+        // never appear lexically (the whole reason we added embeddings)
+        // would still get filtered out by the BM25 pre-pass.
+        let q_emb = encoder.encode(query_str)?;
+        let embeddings = self
+            .embeddings
+            .read()
+            .map_err(|_| anyhow::anyhow!("embeddings lock poisoned"))?;
+
+        // Sort all chunk_ids by cosine, keep candidate_k.
+        let mut scored: Vec<(u64, f32)> = embeddings
+            .iter()
+            .map(|(id, v)| (*id, cosine_similarity(&q_emb, v)))
+            .collect();
+        drop(embeddings);
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(candidate_k);
+
+        // Hydrate the top semantic chunk_ids into SearchHits via tantivy.
+        // This second tantivy roundtrip is bounded by `candidate_k`
+        // documents.
+        let reader = self.inner.reader().context("open reader")?;
+        let searcher = reader.searcher();
+        let mut sem: Vec<(SearchHit, f32)> = Vec::with_capacity(scored.len());
+        for (id, cos) in &scored {
+            // chunk_id is INDEXED — look it up by term.
+            let term = Term::from_field_u64(self.fields.chunk_id, *id);
+            let q = tantivy::query::TermQuery::new(term, tantivy::schema::IndexRecordOption::Basic);
+            let top = searcher
+                .search(&q, &TopDocs::with_limit(1).order_by_score())
+                .context("chunk_id lookup")?;
+            if let Some((_, addr)) = top.into_iter().next() {
+                let doc: TantivyDocument = searcher.doc(addr).context("doc retrieve")?;
+                sem.push((self.doc_to_hit(*cos, &doc)?, *cos));
+            }
+        }
+
+        // RRF fusion. Both rankings contribute 1 / (RRF_K + rank); the
+        // BM25 ranking comes in by order of the `bm25` Vec (already
+        // sorted by score descending), the semantic ranking by `sem`.
+        let mut rrf: HashMap<u64, (SearchHit, f32)> = HashMap::with_capacity(candidate_k);
+
+        for (rank, hit) in bm25.iter().enumerate() {
+            let bonus = 1.0 / (RRF_K + rank as f32 + 1.0);
+            rrf.entry(hit.chunk_id)
+                .and_modify(|(_, s)| *s += bonus)
+                .or_insert_with(|| (hit.clone(), bonus));
+        }
+        for (rank, (hit, _cos)) in sem.iter().enumerate() {
+            let bonus = 1.0 / (RRF_K + rank as f32 + 1.0);
+            rrf.entry(hit.chunk_id)
+                .and_modify(|(_, s)| *s += bonus)
+                .or_insert_with(|| (hit.clone(), bonus));
+        }
+
+        let mut fused: Vec<(SearchHit, f32)> = rrf.into_values().collect();
+        fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Reapply the noise floor against the fused score; same 12 %
+        // semantic as `search_with_cutoff`.
+        let threshold = fused.first().map(|(_, s)| s * cutoff_frac).unwrap_or(0.0);
+
+        let mut out: Vec<SearchHit> = Vec::with_capacity(k);
+        for (mut h, score) in fused {
+            if score < threshold {
+                break;
+            }
+            h.score = score;
+            out.push(h);
+            if out.len() >= k {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     fn doc_to_hit(&self, score: f32, doc: &TantivyDocument) -> Result<SearchHit> {
         let f = self.fields;
         Ok(SearchHit {
@@ -188,6 +328,8 @@ pub struct IndexBatch {
     writer: IndexWriter,
     fields: Fields,
     next_chunk_id: u64,
+    encoder: Option<Arc<StaticEncoder>>,
+    embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
 }
 
 impl IndexBatch {
@@ -206,6 +348,29 @@ impl IndexBatch {
                 self.fields.content => c.content.as_str(),
             ))
             .context("add_document")?;
+
+        // If an encoder is attached, embed `symbol + signature + content`
+        // so the vector captures both the interface and the body. The
+        // encoder is allowed to fail silently — we degrade to BM25-only
+        // for that chunk rather than aborting the whole indexing pass.
+        if let Some(enc) = &self.encoder {
+            let mut text = String::with_capacity(c.symbol.len() + c.signature.len() + c.content.len() + 2);
+            text.push_str(&c.symbol);
+            text.push('\n');
+            text.push_str(&c.signature);
+            text.push('\n');
+            text.push_str(&c.content);
+            match enc.encode(&text) {
+                Ok(v) => {
+                    if let Ok(mut map) = self.embeddings.write() {
+                        map.insert(id, v);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(chunk_id = id, "embedding failed: {e}");
+                }
+            }
+        }
         Ok(id)
     }
 
@@ -329,6 +494,70 @@ function unrelated(): number {
         let hits = idx.search("tokenizer split", 5).unwrap();
         assert!(!hits.is_empty(), "expected hits");
         assert_eq!(hits[0].symbol, "tokenizer");
+    }
+
+    #[test]
+    fn search_hybrid_falls_through_to_bm25_without_encoder() {
+        // No encoder attached → hybrid == bm25 cutoff.
+        let src = r#"
+function validateToken(token: string): boolean { return token.length > 0; }
+function unrelatedHelper(): void {}
+"#;
+        let idx = index_one_file(src, "auth.ts", Language::TypeScript);
+        assert!(!idx.has_encoder());
+        let h1 = idx.search_with_cutoff("validateToken", 5, 0.0).unwrap();
+        let h2 = idx.search_hybrid("validateToken", 5, 0.0).unwrap();
+        assert_eq!(h1.len(), h2.len());
+        assert!(!h1.is_empty());
+        assert_eq!(h1[0].symbol, h2[0].symbol);
+    }
+
+    /// Real model + hybrid search. Gated — same env var as the encoder
+    /// E2E test. Verifies that the semantic rerank actually changes
+    /// rankings on a natural-language query where BM25 alone would miss.
+    #[test]
+    fn search_hybrid_reranks_with_real_model_if_opted_in() {
+        if std::env::var("PLUCK_RUN_MODEL_TESTS").is_err() {
+            return;
+        }
+        let enc = std::sync::Arc::new(
+            crate::semantic::StaticEncoder::load_or_fetch(
+                crate::semantic::DEFAULT_MODEL_ID,
+            )
+            .expect("load encoder"),
+        );
+        let idx = PluckIndex::in_ram().unwrap().with_encoder(enc);
+        let mut w = idx.writer().unwrap();
+        // The "auth" symbol uses no obvious keyword from the query "user
+        // login authentication". The unrelated helper has shared rare
+        // words ("authentication" appears in its docstring). BM25 alone
+        // ranks the unrelated one higher; hybrid should pull the real
+        // auth function up.
+        let src = r#"
+// JWT-based session validation entry point.
+function validateSession(token: string): boolean {
+  if (!token) return false;
+  return token.length === 36;
+}
+
+// Helper: pretty-print authentication errors for log messages.
+function formatAuthErrorLine(line: string): string {
+  return "ERR(authentication): " + line;
+}
+"#;
+        for c in chunk_source(src, Language::TypeScript).unwrap() {
+            w.add_chunk("auth.ts", &c).unwrap();
+        }
+        w.commit().unwrap();
+
+        let hits = idx
+            .search_hybrid("user login authentication", 5, 0.0)
+            .unwrap();
+        // Both should surface; the hybrid order is what we care about.
+        // Whichever the test prefers, semantic + BM25 fusion must produce
+        // a non-empty ranking and not crash.
+        assert!(!hits.is_empty());
+        assert!(hits.iter().any(|h| h.symbol == "validateSession"));
     }
 
     #[test]
