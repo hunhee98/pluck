@@ -45,3 +45,7 @@ harness = false
 [[bench]]
 name = "indexer"
 harness = false
+
+[[bench]]
+name = "freshness"
+harness = false

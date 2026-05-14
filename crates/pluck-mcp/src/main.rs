@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
 
     tracing::info!(version = pluck_core::version(), repo = ?repo, "pluckd starting");
 
-    let server = PluckServer::new(repo).context("build server")?;
+    let server = PluckServer::new_with_watcher(repo).context("build server")?;
     let service = server
         .serve(stdio())
         .await

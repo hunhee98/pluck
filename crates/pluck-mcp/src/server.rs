@@ -23,6 +23,7 @@ use pluck_core::chunker::Language;
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
 use pluck_core::outliner::{outline_source, render as render_outline};
+use pluck_core::watcher::{spawn_watcher, WatcherHandle, DEFAULT_DEBOUNCE};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
@@ -41,13 +42,30 @@ pub struct PluckServer {
 
 struct ServerInner {
     repo_root: PathBuf,
-    index: PluckIndex,
+    index: Arc<PluckIndex>,
     session: Mutex<SessionState>,
+    // Held for the server's lifetime; drop stops the watcher task.
+    _watcher: Option<WatcherHandle>,
 }
 
 impl PluckServer {
+    /// Build a server, indexing `repo_root` on startup. Use this from
+    /// non-async contexts (tests, CLI) — the watcher is *not* attached
+    /// because spawning the tokio task requires a runtime. Use
+    /// [`PluckServer::new_with_watcher`] from within a tokio runtime to
+    /// get incremental reindex.
     pub fn new(repo_root: PathBuf) -> Result<Self> {
-        let index = PluckIndex::in_ram()?;
+        Self::build(repo_root, None)
+    }
+
+    /// Build a server and attach a notify-based watcher so file changes
+    /// reindex automatically. Must be called from a tokio runtime.
+    pub fn new_with_watcher(repo_root: PathBuf) -> Result<Self> {
+        Self::build(repo_root, Some(DEFAULT_DEBOUNCE))
+    }
+
+    fn build(repo_root: PathBuf, debounce: Option<std::time::Duration>) -> Result<Self> {
+        let index = Arc::new(PluckIndex::in_ram()?);
         let stats = index_repo(&index, &repo_root)?;
         tracing::info!(
             files = stats.files_indexed,
@@ -55,11 +73,24 @@ impl PluckServer {
             repo = ?repo_root,
             "indexed repo on startup"
         );
+
+        let watcher = match debounce {
+            Some(d) => match spawn_watcher(repo_root.clone(), Arc::clone(&index), d) {
+                Ok(w) => Some(w),
+                Err(e) => {
+                    tracing::warn!("watcher failed to start: {e}; running without auto-reindex");
+                    None
+                }
+            },
+            None => None,
+        };
+
         Ok(Self {
             inner: Arc::new(ServerInner {
                 repo_root,
                 index,
                 session: Mutex::new(SessionState::default()),
+                _watcher: watcher,
             }),
             tool_router: Self::tool_router(),
         })

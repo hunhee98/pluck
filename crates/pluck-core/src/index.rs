@@ -12,7 +12,7 @@ use tantivy::{
     doc,
     query::QueryParser,
     schema::{Field, Schema, Value, FAST, INDEXED, STORED, STRING, TEXT},
-    Index as TantivyIndex, IndexWriter, TantivyDocument,
+    Index as TantivyIndex, IndexWriter, TantivyDocument, Term,
 };
 
 use crate::chunker::{Chunk, ChunkKind};
@@ -217,6 +217,16 @@ impl IndexBatch {
     pub fn commit(mut self) -> Result<()> {
         self.writer.commit().context("commit")?;
         Ok(())
+    }
+
+    /// Mark every chunk for `rel_path` as deleted. The deletes are
+    /// applied at commit time (tantivy adds a tombstone now and merges
+    /// it into the segment on commit). Returns the (writer-local)
+    /// opstamp from tantivy — unused by callers today, useful for
+    /// future ordering invariants.
+    pub fn delete_path(&mut self, rel_path: &str) -> u64 {
+        let term = Term::from_field_text(self.fields.path, rel_path);
+        self.writer.delete_term(term)
     }
 }
 

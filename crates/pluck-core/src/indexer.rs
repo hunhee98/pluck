@@ -143,6 +143,91 @@ pub fn index_files_in_memory(
     Ok(stats)
 }
 
+/// Incremental update: delete every chunk for each path in `paths`, then
+/// re-add chunks for files that still exist on disk. Used by the file
+/// watcher to keep the index in lock-step with the source tree.
+///
+/// Paths can be absolute or relative to `repo_root`. The index is keyed
+/// on paths relative to `repo_root`, so the function normalizes before
+/// hitting tantivy.
+pub fn reindex_paths(
+    index: &PluckIndex,
+    repo_root: &Path,
+    paths: &[PathBuf],
+) -> Result<IndexStats> {
+    let mut writer = index.writer().context("open writer for reindex")?;
+    let mut stats = IndexStats::default();
+
+    for path in paths {
+        let abs = if path.is_absolute() {
+            path.clone()
+        } else {
+            repo_root.join(path)
+        };
+        let rel = abs
+            .strip_prefix(repo_root)
+            .unwrap_or(&abs)
+            .to_string_lossy()
+            .into_owned();
+
+        // Always delete first — covers deletions and the "old version
+        // of a modified file" case.
+        writer.delete_path(&rel);
+        stats.files_seen += 1;
+
+        // If the file is gone (delete event) we're done with it.
+        if !abs.is_file() {
+            continue;
+        }
+
+        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let Some(lang) = Language::from_extension(ext) else {
+            stats.files_skipped_lang += 1;
+            continue;
+        };
+
+        let md = match std::fs::metadata(&abs) {
+            Ok(m) => m,
+            Err(_) => {
+                stats.files_skipped_read += 1;
+                continue;
+            }
+        };
+        if md.len() > MAX_FILE_BYTES {
+            stats.files_skipped_size += 1;
+            continue;
+        }
+
+        let src = match std::fs::read_to_string(&abs) {
+            Ok(s) => s,
+            Err(_) => {
+                stats.files_skipped_read += 1;
+                continue;
+            }
+        };
+
+        let chunks = match chunk_source(&src, lang) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("reindex chunk failed for {}: {e}", abs.display());
+                stats.files_skipped_read += 1;
+                continue;
+            }
+        };
+
+        for c in &chunks {
+            writer
+                .add_chunk(&rel, c)
+                .with_context(|| format!("reindex add_chunk for {}", abs.display()))?;
+            stats.chunks_indexed += 1;
+        }
+        stats.files_indexed += 1;
+    }
+
+    writer.commit().context("commit reindex")?;
+    Ok(stats)
+}
+
 /// Surface the index path for a repo, creating parent dirs as needed.
 pub fn resolved_index_dir(repo_root: &Path) -> Result<PathBuf> {
     let dir = crate::store::tantivy_dir(repo_root)?;

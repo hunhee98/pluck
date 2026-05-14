@@ -166,6 +166,24 @@ Phase 4 replaces the hand-written workflows with real LLM tool selection;
 the fixture and the marker stay the same so the comparison stays
 apples-to-apples.
 
+### Freshness — save → search-visible
+
+`pluckd` ships with a `notify`-based watcher. On startup, it walks the repo
+once; after that, every save / create / delete inside the repo is
+coalesced inside a 150 ms debounce window and applied to the index
+incrementally (tantivy delete-by-path + add). `cargo bench --bench
+freshness`:
+
+| Repo | Trials | Save → search-visible (p50) | p95 |
+|------|------:|----------------------------:|----:|
+| small  | 50 files   | 10 | **184 ms** | 186 ms |
+| medium | 500 files  | 10 | **183 ms** | 193 ms |
+| large  | 2,000 files | 5 | **182 ms** | 199 ms |
+
+The numbers are flat across repo size — incremental reindex touches only
+the changed file, never the rest of the tree. The 150 ms debounce
+dominates the budget; the actual chunk + commit work is ~30 ms.
+
 ### Indexer throughput & search latency
 
 `cargo bench --bench indexer` on synthetic TypeScript repos (each file: 1
