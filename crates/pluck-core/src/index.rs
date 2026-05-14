@@ -21,6 +21,7 @@ use tantivy::{
 };
 
 use crate::chunker::{Chunk, ChunkKind};
+use crate::ranking::apply_boosts;
 use crate::semantic::{cosine_similarity, StaticEncoder};
 use crate::tokenizer::{PluckTokenizer, TOKENIZER_NAME};
 
@@ -252,6 +253,9 @@ impl PluckIndex {
             let doc: TantivyDocument = searcher.doc(addr).context("doc retrieve")?;
             hits.push(self.doc_to_hit(score, &doc)?);
         }
+        // Post-fusion ranking pipeline: symbol-match / sibling-chunk /
+        // test-file boosts. Re-sorts in place.
+        apply_boosts(&mut hits, query_str);
         Ok(hits)
     }
 
@@ -357,6 +361,7 @@ impl PluckIndex {
                 break;
             }
         }
+        apply_boosts(&mut out, query_str);
         Ok(out)
     }
 

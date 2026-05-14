@@ -10,6 +10,7 @@ pub mod fusion;
 pub mod index;
 pub mod indexer;
 pub mod outliner;
+pub mod ranking;
 pub mod semantic;
 pub mod store;
 pub mod tokenizer;
