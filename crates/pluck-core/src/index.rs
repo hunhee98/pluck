@@ -20,6 +20,19 @@ use tantivy::{
 use crate::chunker::{Chunk, ChunkKind};
 use crate::semantic::{cosine_similarity, StaticEncoder};
 
+/// BM25F per-field boosts.
+///
+/// Standard structured-doc IR move: symbol matches dominate (the user
+/// usually means the function they named), signature next (carries the
+/// type + param names — semantic-dense per byte), content last (longest
+/// field, BM25's IDF already favors rare tokens here). The 5 / 3 / 1
+/// ratio matches the values typical BM25F implementations and the bm25s tutorial both
+/// settle on; we keep them as constants so a future per-query tuner
+/// can override.
+const BM25F_BOOST_SYMBOL: f32 = 5.0;
+const BM25F_BOOST_SIGNATURE: f32 = 3.0;
+const BM25F_BOOST_CONTENT: f32 = 1.0;
+
 const WRITER_HEAP_BYTES: usize = 50_000_000;
 
 pub struct PluckIndex {
@@ -130,6 +143,26 @@ impl PluckIndex {
         self.search_with_cutoff(query_str, k, 0.0)
     }
 
+    /// Build a query parser that scores BM25 per field but with the
+    /// BM25F per-field boosts applied. The actual fusion across fields
+    /// is BM25's own field-by-field accumulator — tantivy's
+    /// QueryParser distributes the parsed query across each field and
+    /// multiplies the per-field score by the boost we set here.
+    fn bm25f_query_parser(&self) -> QueryParser {
+        let mut qp = QueryParser::for_index(
+            &self.inner,
+            vec![
+                self.fields.symbol,
+                self.fields.signature,
+                self.fields.content,
+            ],
+        );
+        qp.set_field_boost(self.fields.symbol, BM25F_BOOST_SYMBOL);
+        qp.set_field_boost(self.fields.signature, BM25F_BOOST_SIGNATURE);
+        qp.set_field_boost(self.fields.content, BM25F_BOOST_CONTENT);
+        qp
+    }
+
     /// Exact lookup by symbol name (the `symbol` field).
     ///
     /// `name` is matched as a term against the tantivy default tokenizer
@@ -177,14 +210,7 @@ impl PluckIndex {
     ) -> Result<Vec<SearchHit>> {
         let reader = self.inner.reader().context("open reader")?;
         let searcher = reader.searcher();
-        let qp = QueryParser::for_index(
-            &self.inner,
-            vec![
-                self.fields.symbol,
-                self.fields.signature,
-                self.fields.content,
-            ],
-        );
+        let qp = self.bm25f_query_parser();
         let query = qp.parse_query(query_str).context("parse query")?;
         let top = searcher
             .search(&query, &TopDocs::with_limit(k).order_by_score())
@@ -558,6 +584,32 @@ function formatAuthErrorLine(line: string): string {
         // a non-empty ranking and not crash.
         assert!(!hits.is_empty());
         assert!(hits.iter().any(|h| h.symbol == "validateSession"));
+    }
+
+    #[test]
+    fn bm25f_boosts_symbol_match_above_body_match() {
+        // Two chunks: one *is* the symbol `handleLogin`, the other just
+        // mentions `handleLogin` inside its body. Symbol-match must rank
+        // first under BM25F because of the symbol field boost.
+        let src = r#"
+function handleLogin(user: string): boolean {
+  return user.length > 0;
+}
+
+function dispatchByName(name: string): void {
+  if (name === "handleLogin") {
+    console.log("matched");
+  }
+}
+"#;
+        let idx = index_one_file(src, "auth.ts", Language::TypeScript);
+        let hits = idx.search_with_cutoff("handleLogin", 5, 0.0).unwrap();
+        assert!(!hits.is_empty(), "expected hits");
+        assert_eq!(
+            hits[0].symbol, "handleLogin",
+            "BM25F must rank the symbol-match above the body-mention; got: {:?}",
+            hits.iter().map(|h| &h.symbol).collect::<Vec<_>>()
+        );
     }
 
     #[test]
