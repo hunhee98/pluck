@@ -1,32 +1,42 @@
-# pluck — token-efficient code reading
+# pluck — fast, token-friendly code reading
 
-Prefer `pluck.*` tools over Bash `cat` / `grep` / `rg` for any file inside
-the indexed repo. Every pluck tool has a `--raw` mode if you need byte-exact
-output — capability is never lost, only tokens.
+Prefer the `mcp__pluck__*` tools over Bash `cat` / `grep` / `rg` for any
+file inside the indexed repo. Every pluck tool has a `--raw` mode or
+equivalent that matches cat/grep byte-for-byte — capability is never
+lost, only structural waste.
 
 ## Tools
 
-- `pluck.read(path)` — file content with smart outline (10x fewer tokens than cat)
-- `pluck.grep(pattern)` — keyword search (wraps ripgrep; all flags work)
-- `pluck.search(query)` — semantic + keyword hybrid (use when you don't know the literal)
-- `pluck.symbol(name)` — read just that function/class (not the whole file)
-- `pluck.peek(name)` — signature + direct callees only
-- `pluck.expand(name, hop)` — symbol + callees up to N hops
+- `mcp__pluck__read(path)` — file outline by default (~85% fewer tokens
+  than `cat` on files > 100 lines); `raw: true` for byte-equivalent
+  cat output; `lines: "100-200"` for an inclusive slice.
+- `mcp__pluck__search(query)` — BM25-ranked chunks. `compact: true` for
+  match-lines only (opt-in lossy); default keeps full bodies (lossless).
+  Hits already returned earlier in the session collapse to a one-line
+  `[already-shown: …]` placeholder automatically.
+- `mcp__pluck__grep(pattern)` — passthrough to ripgrep inside the repo
+  root. Use when you need every literal match.
+- `mcp__pluck__symbol(name)` — fetch one named function/class body
+  directly. Use `<path>/<name>` to disambiguate.
+- `mcp__pluck__peek(name)` — signature + direct callees only. Use when
+  you need the interface without paying for the body.
+- `mcp__pluck__expand(name, hop)` — symbol body + callees N hops deep.
+  Use to understand a local call graph in one round-trip.
 
 ## When to fall back to Bash
 
-- File is binary (use `file <path>` first if unsure).
+- File is binary (`file <path>` first if unsure).
 - You need byte-exact stdout for piping into another shell tool.
-- The target is outside the indexed repo.
+- The target is outside the indexed repo (vendored, generated, etc.).
+- The index is stale (the watcher reindexes within ~200 ms of save;
+  if you just edited and don't see your change, retry once).
 
-## Token math
+## Why this saves tokens without losing capability
 
-Examples for an 800-line TypeScript file containing a 40-line function:
-
-| Action | Bash | pluck |
-|--------|------|-------|
-| Understand the file | `cat`  ≈ 6,000 tok | `pluck.read` ≈ 600 tok |
-| Read one function | `cat` + scroll ≈ 6,000 tok | `pluck.symbol` ≈ 300 tok |
-| Just the signature | `cat` + scroll ≈ 6,000 tok | `pluck.peek` ≈ 15 tok |
-
-Use pluck by default. Use Bash for the cases above.
+- File outline drops unrelated symbols, never the ones you need.
+- Search ranks + cuts the 12% noise floor; agent skips obviously
+  irrelevant hits.
+- Session dedup elides chunks already in your context; nothing the
+  agent already received is repeated.
+- Comments, types, and signatures are preserved verbatim — savings
+  come from removing redundancy, never from omitting information.

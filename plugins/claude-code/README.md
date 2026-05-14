@@ -1,40 +1,65 @@
 # pluck — Claude Code plugin
 
-One-line install for Claude Code:
+Fast and token-friendly code reading for AI coding agents. Six MCP
+tools that replace `cat` / `grep` with symbol-aware retrieval,
+sub-millisecond warm search, and a `raw` fallback that preserves
+cat/grep parity byte-for-byte.
+
+## Install
+
+Install the binary first (the plugin manifest references `pluckd`
+on PATH):
 
 ```bash
-claude plugin add pluck
+cargo install --git https://github.com/hunhee98/pluck pluck-mcp
+# binary lands at ~/.cargo/bin/pluckd
 ```
 
-The plugin bundles:
+Then enable the plugin via Claude Code's plugin marketplace flow:
 
-1. **MCP server registration** — `pluckd` starts on demand over stdio.
-2. **`CLAUDE.md` snippet injection** — teaches the agent when to prefer
-   `pluck.*` over Bash `cat`/`grep`.
-3. **Pre-allowed permissions** — `mcp__pluck__*` runs without per-call
-   prompts.
-4. **Background daemon control** — `pluckd` keeps the index warm; a file
-   watcher reindexes on save.
+```text
+/plugin marketplace add hunhee98/pluck
+/plugin install pluck@hunhee98-pluck
+```
 
-## Manual install
-
-If you prefer to wire it up yourself:
+Or, during local development, point Claude Code at this directory:
 
 ```bash
-# 1. Install the binary
-brew install pluck      # or: cargo install pluck
-
-# 2. Register the MCP server
-claude mcp add pluck pluckd -- --stdio
-
-# 3. Add the snippet from CLAUDE.md.tmpl to your project's CLAUDE.md
+claude --plugin-dir /path/to/pluck/plugins/claude-code
 ```
+
+## What the plugin contributes
+
+| File | What it does |
+|------|--------------|
+| `.claude-plugin/plugin.json` | Plugin identity (name, version, homepage) |
+| `.mcp.json` | Registers `pluckd` as an MCP server, scoped to `${REPO_ROOT}` |
+| `settings.json` | Pre-allows `mcp__pluck__*` so the agent never gets prompted per tool call |
+| `CLAUDE.md.tmpl` | Suggested CLAUDE.md snippet — add it to your project root or `~/.claude/CLAUDE.md` manually (auto-injection is not yet a Claude Code feature) |
+
+## Verify
+
+After install, run any prompt that would normally cat or grep:
+
+```text
+Find authentication-related code in this project.
+```
+
+Claude Code should call `mcp__pluck__search` (or `read` / `peek`) and
+return ranked chunks. If it still shells out to `cat` / `rg`, check:
+
+1. `pluckd --version` runs from your shell.
+2. `claude mcp list` shows `pluck` as connected.
+3. Your project's CLAUDE.md (or `~/.claude/CLAUDE.md`) includes the
+   contents of `CLAUDE.md.tmpl` — without that snippet the agent has
+   no policy hint to prefer pluck over Bash.
 
 ## Uninstall
 
-```bash
-claude plugin remove pluck
+```text
+/plugin uninstall pluck
 ```
 
-Removes the MCP entry and the injected snippet. Leaves the binary in place
-(remove via your package manager if you want it gone).
+Removes the MCP entry and the permission allowlist. Leaves
+`~/.cargo/bin/pluckd` in place; remove with `cargo uninstall pluck-mcp`
+if you want it gone.

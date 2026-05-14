@@ -1,0 +1,11 @@
+{
+  "name": "pluck",
+  "version": "0.1.0",
+  "description": "Fast and token-friendly code reading for AI coding agents. Symbol-aware MCP tools that replace cat/grep with ~85% fewer tokens, sub-millisecond search, and a raw fallback that preserves cat/grep parity byte-for-byte.",
+  "author": {
+    "name": "Hunhee Lee"
+  },
+  "homepage": "https://github.com/hunhee98/pluck",
+  "repository": "https://github.com/hunhee98/pluck",
+  "license": "MIT"
+}

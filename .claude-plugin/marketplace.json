@@ -1,0 +1,12 @@
+{
+  "name": "hunhee98-pluck",
+  "description": "Fast and token-friendly code reading for AI coding agents.",
+  "owner": "hunhee98",
+  "plugins": [
+    {
+      "name": "pluck",
+      "source": "./plugins/claude-code",
+      "description": "Fast and token-friendly code reading. Symbol-aware MCP tools that replace cat/grep with ~85% fewer tokens and a raw fallback that preserves cat/grep parity byte-for-byte."
+    }
+  ]
+}

@@ -175,7 +175,7 @@ fn default_hop() -> u8 {
 #[tool_router(router = tool_router)]
 impl PluckServer {
     #[doc = include_str!("../../../docs/mcp-descriptions/read.md")]
-    #[tool(name = "pluck.read")]
+    #[tool(name = "read")]
     pub async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
         let path = self.resolve_in_repo(&p.path);
         let src = std::fs::read_to_string(&path).map_err(|e| {
@@ -209,7 +209,7 @@ impl PluckServer {
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/search.md")]
-    #[tool(name = "pluck.search")]
+    #[tool(name = "search")]
     pub async fn search(&self, Parameters(p): Parameters<SearchParams>) -> Result<String, McpError> {
         let hits = self
             .inner
@@ -256,7 +256,7 @@ impl PluckServer {
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/grep.md")]
-    #[tool(name = "pluck.grep")]
+    #[tool(name = "grep")]
     pub async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
         let mut cmd = Shell::new("rg");
         cmd.arg(&p.pattern);
@@ -278,7 +278,7 @@ impl PluckServer {
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/symbol.md")]
-    #[tool(name = "pluck.symbol")]
+    #[tool(name = "symbol")]
     pub async fn symbol(
         &self,
         Parameters(p): Parameters<SymbolParams>,
@@ -364,7 +364,7 @@ impl PluckServer {
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/peek.md")]
-    #[tool(name = "pluck.peek")]
+    #[tool(name = "peek")]
     pub async fn peek(
         &self,
         Parameters(p): Parameters<PeekParams>,
@@ -435,7 +435,7 @@ impl PluckServer {
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/expand.md")]
-    #[tool(name = "pluck.expand")]
+    #[tool(name = "expand")]
     pub async fn expand(
         &self,
         Parameters(p): Parameters<ExpandParams>,

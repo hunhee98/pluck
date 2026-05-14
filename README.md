@@ -15,12 +15,30 @@ After:   pluck.search / pluck.read(symbol)          (~ 5,000 tok / session, -90%
 ## Install
 
 ```bash
-# Claude Code (one-line, recommended)
-claude plugin add pluck
+# 1. Install the daemon binary
+cargo install --git https://github.com/hunhee98/pluck pluck-mcp
+#    → ~/.cargo/bin/pluckd
 
-# Or via package manager
-brew install pluck
-cargo install pluck
+# 2. Add the Claude Code plugin
+/plugin marketplace add hunhee98/pluck
+/plugin install pluck@hunhee98-pluck
+```
+
+Local development install (no marketplace, no network):
+
+```bash
+git clone https://github.com/hunhee98/pluck
+cd pluck
+cargo install --path crates/pluck-mcp
+claude --plugin-dir $(pwd)/plugins/claude-code
+```
+
+Standalone CLI (no agent, no MCP):
+
+```bash
+cargo install --git https://github.com/hunhee98/pluck pluck-cli
+pluck index .
+pluck search "auth flow" --repo .
 ```
 
 ## What it does
@@ -31,14 +49,14 @@ No server. No LLM in the loop. No internet. Single binary.
 
 ## Tools (MCP)
 
-| Tool | Replaces | Use when |
-|------|----------|----------|
-| `pluck.read(path)` | `cat` | Read a code file (smart outline by default; `--raw` for byte-exact) |
-| `pluck.grep(pattern)` | `grep` / `rg` | Keyword search (all ripgrep flags wrapped) |
-| `pluck.search(query)` | — | Semantic + keyword hybrid |
-| `pluck.symbol(name)` | `cat` + scroll | Read just that function/class |
-| `pluck.peek(name)` | — | Signature + direct callees only |
-| `pluck.expand(name, hop)` | many `cat`s | Symbol + callees up to N hops |
+| Tool (wire name) | Replaces | Use when |
+|------------------|----------|----------|
+| `mcp__pluck__read` | `cat` | Read a code file (smart outline by default; `raw: true` for byte-exact) |
+| `mcp__pluck__grep` | `grep` / `rg` | Keyword search (all ripgrep flags wrapped) |
+| `mcp__pluck__search` | — | Ranked-chunk search (BM25 today; semantic stage in Phase 2) |
+| `mcp__pluck__symbol` | `cat` + scroll | Read just that function/class |
+| `mcp__pluck__peek` | — | Signature + direct callees only |
+| `mcp__pluck__expand` | many `cat`s | Symbol + callees up to N hops |
 
 **Capability guarantee:** every tool has a `--raw` mode that matches `cat`/`grep` byte-for-byte. No loss of agent capability.
 
