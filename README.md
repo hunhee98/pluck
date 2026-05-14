@@ -42,21 +42,37 @@ No server. No LLM in the loop. No internet. Single binary.
 
 **Capability guarantee:** every tool has a `--raw` mode that matches `cat`/`grep` byte-for-byte. No loss of agent capability.
 
-## Why pluck
+## Why pluck (vs `a prior-art code search tool`, the closest prior art)
 
-| Capability | `cat` + `grep` | a prior-art code search tool |  | **pluck** |
-|------------|----------------|-----------|--------|-----------|
-| Hybrid BM25 + semantic | ✗ | ✓ | ✓ | ✓ |
-| AST-level chunks | ✗ | ✓ | ✓ | ✓ |
-| Dependency / impact | ✗ | ✓ | ✓ | ✓ |
-| **Symbol-level read** | ✗ | ✗ | ✓ | ✓ |
-| **Signature-only peek** | ✗ | ✗ | ✗ | **✓** |
-| **Incremental index** | ✗ | ✗ | ? | **✓** |
-| **Session dedup** | ✗ | ✗ | ✗ | **✓** |
-| **Zero-config plugin** | — | ✗ | ✗ | **✓** |
-| **`--raw` cat/grep parity** | — | ✗ | ✗ | **✓** |
-| Korean tokenizer | ✗ | ✓ | ? | **✓** |
-| Language | — | Rust | Zig | Rust |
+`a prior-art code search tool`  already covers most of the
+indexing stack pluck needs: tree-sitter chunking, BM25, `potion-code-16M`
+embeddings, RRF fusion, 12% noise cutoff, Unicode tokenizer. Token-savings
+numbers are in the same ballpark when measured the same way. pluck's bet is
+that the **agent-facing layer** is what's missing.
+
+| Capability | `cat` + `grep` | a prior-art code search tool | **pluck** |
+|------------|----------------|-----------|-----------|
+| Hybrid BM25 + semantic | ✗ | ✓ | ✓ (Phase 2) |
+| AST-level chunks | ✗ | ✓ (8 langs) | ✓ (5 langs, Phase 0) |
+| Unicode / Korean tokenizer | ✗ | ✓ | ✓ (Phase 2) |
+| 12% noise cutoff | — | ✓ | ✓ |
+| **Persistent daemon (MCP stdio)** | — | ✗ (cold CLI per call) | **✓** |
+| **Persistent index (mmap)** | — | ✗ (re-indexes every run) | **✓** (Phase 0/1) |
+| **Incremental reindex (`notify`)** | — | ✗ | **✓** |
+| **Session-scoped dedup** | — | ✗ | **✓** |
+| **`--raw` cat/grep byte parity** | — | ✗ | **✓** |
+| **`peek` (signature + callees)** | ✗ | partial (`--outline`) | **✓** |
+| **Single-file outline (`pluck.read`)** | ✗ | ✗ (search-result only) | **✓** |
+| **Multi-hop `expand`** | ✗ | partial (`deps`/`impact`) | **✓** |
+| Dependency / impact graph | ✗ | ✓ | planned (Phase 4) |
+
+Where pluck ties or trails today: indexing algorithm, language coverage,
+dep-graph maturity. Where pluck leads, or plans to: **state preservation
+across calls (daemon, persistent index, watcher, session dedup), agent-tool
+diversity (peek, expand, single-file outline), and the `--raw` safety net
+that lets the agent fall back to byte-equivalent cat/grep when the index is
+wrong or stale.** The headline token savings (~85–90% vs grep+cat) are the
+floor for both tools; the differentiator is what happens between calls.
 
 ## Benchmarks
 
@@ -72,7 +88,29 @@ _Numbers above are projection targets validated against the harness in `crates/p
 
 ## Performance
 
-### Token savings (`pluck.read` outline vs `cat`)
+### Token savings — `pluck.search` vs `rg` / `cat`
+
+Measured against a synthetic 92-file TypeScript repo (12 subject-matter files +
+80 noise modules that mention query keywords incidentally — the shape of a
+real codebase). `cargo bench --bench search`. Repo size: 32,756 cat-tokens
+total. Renderings: `--full` keeps the chunk body; `--compact` keeps only the
+score, path, range, and matching lines (the apples-to-apples comparison with
+a prior-art code search tool's headline `-93%` claim).
+
+| Query | `rg` lines | `rg + cat matched files` | pluck `--full` | pluck `--compact` | save vs cat | save vs rg |
+|-------|----------:|-------------------------:|---------------:|------------------:|------------:|-----------:|
+| session expiry refresh | 3,273 | 6,859 | 900 | **622** | 91% | 81% |
+| password verification  | 2,034 | 4,402 | 1,029 | **559** | 87% | 73% |
+| refund window          | 1,085 | 2,186 | 1,000 | **430** | 80% | 60% |
+| subscription billing   | 1,052 | 2,189 | 987 | **465** | 79% | 56% |
+| auth middleware        | 2,728 | 6,194 | 1,013 | **443** | 93% | 84% |
+
+Average: **86% vs `grep + cat matched files`**, **71% vs raw `rg` lines**.
+Comparable to a prior-art code search tool's 93% (BM25 + embeddings); pluck's number here is
+BM25-only — adding the `potion-code-16M` semantic stage (Phase 2) should
+narrow that gap further.
+
+### Token savings — `pluck.read` outline vs `cat`
 
 Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench tokens`.
 
