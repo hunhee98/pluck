@@ -40,4 +40,16 @@ impl Lang {
             Self::Go => include_str!("queries/go.scm"),
         }
     }
+
+    /// Tree-sitter query that captures direct callees inside a chunk —
+    /// every node bound to `@callee` is returned as a single callee name.
+    pub fn callee_query_str(self) -> &'static str {
+        match self {
+            Self::TypeScript => include_str!("queries/callees/typescript.scm"),
+            Self::JavaScript => include_str!("queries/callees/javascript.scm"),
+            Self::Rust => include_str!("queries/callees/rust.scm"),
+            Self::Python => include_str!("queries/callees/python.scm"),
+            Self::Go => include_str!("queries/callees/go.scm"),
+        }
+    }
 }

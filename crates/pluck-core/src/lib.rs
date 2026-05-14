@@ -3,6 +3,7 @@
 //! Indexing, AST chunking, hybrid (BM25 + semantic) search, and incremental
 //! reindex for the pluck daemon and CLI.
 
+pub mod callees;
 pub mod chunker;
 pub mod outliner;
 pub mod indexer;

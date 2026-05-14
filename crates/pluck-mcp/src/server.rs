@@ -19,6 +19,7 @@ use std::process::{Command as Shell, Stdio};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
+use pluck_core::callees::extract_callees;
 use pluck_core::chunker::Language;
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
@@ -364,9 +365,73 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/peek.md")]
     #[tool(name = "pluck.peek")]
-    async fn peek(&self, Parameters(p): Parameters<PeekParams>) -> Result<String, McpError> {
-        let _ = p;
-        Ok("pluck.peek — not yet implemented (Phase 4). Use pluck.search to surface candidate symbols and pluck.read for their signature ranges.".into())
+    pub async fn peek(
+        &self,
+        Parameters(p): Parameters<PeekParams>,
+    ) -> Result<String, McpError> {
+        let (path_filter, name) = match p.name.rsplit_once('/') {
+            Some((path, sym)) => (Some(path), sym),
+            None => (None, p.name.as_str()),
+        };
+
+        let hits = self
+            .inner
+            .index
+            .lookup_symbol(name, path_filter)
+            .map_err(|e| McpError::internal_error(format!("symbol lookup failed: {e}"), None))?;
+
+        if hits.is_empty() {
+            return Ok(format!(
+                "no symbol named `{}` found{}.\n",
+                p.name,
+                path_filter.map(|p| format!(" under path `{p}`")).unwrap_or_default(),
+            ));
+        }
+
+        // Ambiguous — show candidate list (peek wants surgical answers,
+        // dumping every signature defeats the purpose).
+        if hits.len() > 1 {
+            let mut out = format!(
+                "`{}` matches {} symbols — disambiguate with `<path>/<name>`:\n",
+                p.name,
+                hits.len()
+            );
+            for h in &hits {
+                out.push_str(&format!(
+                    "  {}:L{}-{}  {} ({:?})\n",
+                    h.path, h.start_line, h.end_line, h.symbol, h.kind
+                ));
+            }
+            return Ok(out);
+        }
+
+        // Single match: signature + direct callees. No body — peek's value
+        // proposition is "10x cheaper than pluck.symbol when you only need
+        // the interface".
+        let h = &hits[0];
+        let lang = std::path::Path::new(&h.path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(Language::from_extension)
+            .unwrap_or(Language::TypeScript);
+        let callees = extract_callees(&h.content, lang);
+
+        let mut out = format!(
+            "{}:L{}-{}  {} ({:?})\n",
+            h.path, h.start_line, h.end_line, h.symbol, h.kind
+        );
+        out.push_str(&h.signature);
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+        if callees.is_empty() {
+            out.push_str("  (no direct callees)\n");
+        } else {
+            out.push_str("  calls: ");
+            out.push_str(&callees.join(", "));
+            out.push('\n');
+        }
+        Ok(out)
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/expand.md")]
@@ -486,6 +551,68 @@ mod tests {
             }))
             .await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pluck_peek_returns_signature_plus_callees() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let out = server
+            .peek(Parameters(PeekParams {
+                name: "chunk_source".into(),
+            }))
+            .await
+            .expect("peek");
+
+        // Signature line is present, no full body.
+        assert!(out.contains("pub fn chunk_source"), "got: {out}");
+        assert!(out.contains("calls:"), "got: {out}");
+        // peek must be dramatically smaller than pluck.symbol for the
+        // same name — that's the entire reason peek exists.
+        let server2 = PluckServer::new(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .to_path_buf(),
+        )
+        .unwrap();
+        let symbol_out = server2
+            .symbol(Parameters(SymbolParams {
+                name: "chunk_source".into(),
+            }))
+            .await
+            .expect("symbol");
+        assert!(
+            out.len() * 2 < symbol_out.len(),
+            "peek should be at least 2x smaller than symbol; peek={} symbol={}",
+            out.len(),
+            symbol_out.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn pluck_peek_unknown_name() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let out = server
+            .peek(Parameters(PeekParams {
+                name: "definitely_not_a_real_function_xyzzy".into(),
+            }))
+            .await
+            .expect("peek");
+        assert!(out.contains("no symbol"), "got: {out}");
     }
 
     #[tokio::test]

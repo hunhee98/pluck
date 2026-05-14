@@ -1,7 +1,7 @@
 # pluck
 
-> **Token-efficient code reading for AI coding agents.**
-> A drop-in replacement for `cat` and `grep` — agents use ~90% fewer tokens to explore code, with zero loss of capability.
+> **Fast and token-friendly code reading for AI coding agents.**
+> A drop-in replacement for `cat` and `grep`. Sub-millisecond warm search, ~85% fewer tokens, zero loss of agent capability.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
