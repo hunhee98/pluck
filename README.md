@@ -123,6 +123,22 @@ Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench t
 
 Files ≤ 100 lines fall through to raw mode automatically (no win in outlining a tiny file). Above that, the outline is signature-only; the agent fetches bodies on demand via `pluck.symbol(name)` or `pluck.read(lines: …)`.
 
+### Indexer throughput & search latency
+
+`cargo bench --bench indexer` on synthetic TypeScript repos (each file: 1
+interface + 6 async handler functions, ~25 lines each):
+
+| Repo | Files | Chunks | Index time | Files/s | Chunks/s | Search warm (p50) | Search cold (p50) |
+|------|------:|-------:|----------:|--------:|---------:|------------------:|------------------:|
+| Small  | 50   | 350    | 135 ms    | 371     | 2,594    | **0.05 ms**       | 0.40 ms |
+| Medium | 500  | 3,500  | 1.3 s     | 386     | 2,701    | **0.06 ms**       | 0.40 ms |
+| Large  | 2,000 | 14,000 | 5.2 s    | 387     | 2,709    | **0.10 ms**       | 0.51 ms |
+
+Indexing throughput is linear in file count (~387 files/s on M-series).
+Warm search — the path the agent takes for every call after the first —
+is **sub-millisecond at every repo size**. Cold search (fresh mmap open
+per query, the worst case the daemon ever pays) stays under 1 ms.
+
 ### AST chunker latency
 
 `cargo bench --bench chunker` (TypeScript, M-series Mac):
@@ -151,6 +167,27 @@ Median of 100 samples (Criterion). Most of the small-workload cost is one-time `
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
+
+## CLI
+
+The `pluck` binary works standalone (the MCP server in Phase 1 is the same
+core, exposed over stdio).
+
+```bash
+pluck index .                          # build the index for the current repo
+pluck search "auth token expiry" \     # ranked chunks; default mode is lossless
+        --repo . -k 10
+pluck search "auth token expiry" \
+        --repo . --compact             # opt-in lossy: score + path + match lines
+pluck read src/auth/login.ts           # outline by default (~85% fewer tokens)
+pluck read src/auth/login.ts --raw     # byte-identical to `cat`
+pluck read src/auth/login.ts --lines 45-120
+pluck grep "TODO" -- --type ts         # passthrough to ripgrep (--raw safety net)
+```
+
+The index is persisted at `~/.pluck/<repo-hash>/tantivy/` (override with
+`PLUCK_HOME`). Today `pluck index` rebuilds from scratch; incremental
+reindex via `notify` lands in Phase 2.
 
 ## Development
 

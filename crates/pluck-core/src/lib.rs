@@ -5,6 +5,8 @@
 
 pub mod chunker;
 pub mod outliner;
+pub mod indexer;
+pub mod store;
 pub mod bm25;
 pub mod semantic;
 pub mod fusion;

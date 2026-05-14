@@ -23,6 +23,8 @@ thiserror.workspace = true
 tracing.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+ignore.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -38,4 +40,8 @@ harness = false
 
 [[bench]]
 name = "search"
+harness = false
+
+[[bench]]
+name = "indexer"
 harness = false

@@ -41,6 +41,12 @@ tokio = { version = "1", features = ["full"] }
 # Watcher
 notify = "6.1"
 
+# File walker (respects .gitignore)
+ignore = "0.4"
+
+# Home/config dir resolution
+dirs = "5"
+
 # Tokenization for measurement
 tiktoken-rs = "0.5"
 
