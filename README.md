@@ -187,6 +187,41 @@ Median of 100 samples (Criterion). Most of the small-workload cost is one-time `
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
+## MCP server (`pluckd`)
+
+`pluckd` speaks the Model Context Protocol over stdio. Any MCP-compatible
+agent (Claude Code, Cursor, Codex, Aider, OpenHands, …) can wire it up.
+
+```bash
+# Build the daemon binary
+cargo build --release -p pluck-mcp
+
+# Probe locally
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  | ./target/release/pluckd --repo /path/to/repo
+```
+
+Six tools register at handshake — `pluck.read`, `pluck.search`, `pluck.grep`,
+`pluck.symbol`, `pluck.peek`, `pluck.expand`. Today `read` / `search` / `grep`
+are fully wired through `pluck-core`; the other three return placeholder
+text and land in subsequent phases. Tool descriptions live under
+`docs/mcp-descriptions/` and are compiled into the binary via `include_str!`,
+so every release ships the exact copy the agent reads during tool selection.
+
+### Wiring into Claude Code
+
+```jsonc
+// claude_config.json (excerpt)
+{
+  "mcpServers": {
+    "pluck": {
+      "command": "pluckd",
+      "args": ["--repo", "/path/to/your/repo"]
+    }
+  }
+}
+```
+
 ## CLI
 
 The `pluck` binary works standalone (the MCP server in Phase 1 is the same

@@ -12,7 +12,8 @@ path = "src/main.rs"
 
 [dependencies]
 pluck-core = { path = "../pluck-core" }
-rmcp.workspace = true
+rmcp = { workspace = true, features = ["server", "macros", "schemars", "transport-io"] }
+schemars = "0.8"
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
