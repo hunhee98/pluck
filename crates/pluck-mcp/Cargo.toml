@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "MCP server for pluck — exposes pluck.* tools over stdio"
+homepage.workspace = true
+readme.workspace = true
+description = "MCP server (pluckd) for pluck — exposes the read/search/grep/symbol/peek/expand tools over stdio for AI coding agents like Claude Code, Cursor, and Codex."
+keywords = ["mcp", "ai-agent", "code-search", "stdio", "claude"]
+categories = ["development-tools", "command-line-utilities"]
 
 [[bin]]
 name = "pluckd"
@@ -15,7 +19,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-pluck-core = { path = "../pluck-core" }
+pluck-core = { path = "../pluck-core", version = "0.1.0" }
 rmcp = { workspace = true, features = ["server", "macros", "schemars", "transport-io"] }
 schemars = "0.8"
 tokio.workspace = true

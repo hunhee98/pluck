@@ -4,14 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "pluck CLI — symbol-aware code reading for terminals and non-MCP envs"
+homepage.workspace = true
+readme.workspace = true
+description = "pluck CLI — symbol-aware code reading for terminals and non-MCP environments. Drop-in replacement for cat/grep with a raw fallback that preserves their output byte-for-byte."
+keywords = ["code-search", "tree-sitter", "tantivy", "cli", "grep"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 
 [[bin]]
 name = "pluck"
 path = "src/main.rs"
 
 [dependencies]
-pluck-core = { path = "../pluck-core" }
+pluck-core = { path = "../pluck-core", version = "0.1.0" }
 clap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true

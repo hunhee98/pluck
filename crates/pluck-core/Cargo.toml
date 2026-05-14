@@ -4,7 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Core indexing, search, and AST chunking for pluck"
+homepage.workspace = true
+readme.workspace = true
+description = "Core indexing, AST chunking, BM25 search, and incremental reindex for pluck — the fast, token-friendly code-reading MCP server for AI coding agents."
+keywords = ["mcp", "ai-agent", "code-search", "tree-sitter", "tantivy"]
+categories = ["development-tools", "text-processing", "command-line-utilities"]
 
 [dependencies]
 tree-sitter.workspace = true

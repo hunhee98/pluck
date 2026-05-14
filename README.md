@@ -14,31 +14,40 @@ After:   pluck.search / pluck.read(symbol)          (~ 5,000 tok / session, -90%
 
 ## Install
 
-```bash
-# 1. Install the daemon binary
-cargo install --git https://github.com/hunhee98/pluck pluck-mcp
-#    → ~/.cargo/bin/pluckd
+### Recommended (after 0.1.0 ships to crates.io)
 
-# 2. Add the Claude Code plugin
+```bash
+# Daemon + standalone CLI from crates.io
+cargo install pluck-mcp pluck-cli
+
+# Or via Homebrew tap
+brew tap hunhee98/pluck && brew install pluck
+```
+
+Then enable the Claude Code plugin:
+
+```text
 /plugin marketplace add hunhee98/pluck
 /plugin install pluck@hunhee98-pluck
 ```
 
-Local development install (no marketplace, no network):
+### Source install (works today, no registry needed)
 
 ```bash
 git clone https://github.com/hunhee98/pluck
 cd pluck
-cargo install --path crates/pluck-mcp
+cargo install --path crates/pluck-mcp     # → pluckd
+cargo install --path crates/pluck-cli     # → pluck
 claude --plugin-dir $(pwd)/plugins/claude-code
 ```
 
-Standalone CLI (no agent, no MCP):
+### Standalone CLI (no agent)
 
 ```bash
-cargo install --git https://github.com/hunhee98/pluck pluck-cli
 pluck index .
 pluck search "auth flow" --repo .
+pluck read src/auth/login.ts        # smart outline
+pluck read src/auth/login.ts --raw  # byte-equivalent cat
 ```
 
 ## What it does

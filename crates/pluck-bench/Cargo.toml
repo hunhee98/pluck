@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Reproducible benchmark harness comparing pluck against cat/grep workflows"
+description = "Reproducible benchmark harness comparing pluck against cat/grep workflows. Internal use only — not published to crates.io."
+publish = false
 
 [[bin]]
 name = "pluck-bench"
