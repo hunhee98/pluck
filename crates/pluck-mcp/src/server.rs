@@ -436,9 +436,138 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/expand.md")]
     #[tool(name = "pluck.expand")]
-    async fn expand(&self, Parameters(p): Parameters<ExpandParams>) -> Result<String, McpError> {
-        let _ = p;
-        Ok("pluck.expand — not yet implemented (Phase 4). Use pluck.search for the symbol, then follow callees by hand.".into())
+    pub async fn expand(
+        &self,
+        Parameters(p): Parameters<ExpandParams>,
+    ) -> Result<String, McpError> {
+        let hop = p.hop.clamp(1, 3); // beyond 3 hops the output explodes
+        let (path_filter, name) = match p.name.rsplit_once('/') {
+            Some((path, sym)) => (Some(path), sym),
+            None => (None, p.name.as_str()),
+        };
+
+        let root_hits = self
+            .inner
+            .index
+            .lookup_symbol(name, path_filter)
+            .map_err(|e| McpError::internal_error(format!("symbol lookup failed: {e}"), None))?;
+
+        if root_hits.is_empty() {
+            return Ok(format!("no symbol named `{}` found.\n", p.name));
+        }
+        if root_hits.len() > 1 {
+            // Same disambiguation contract as peek/symbol — don't dump
+            // every candidate's body and call-graph.
+            let mut out = format!(
+                "`{}` is ambiguous — {} candidates. Disambiguate with `<path>/<name>`:\n",
+                p.name,
+                root_hits.len()
+            );
+            for h in &root_hits {
+                out.push_str(&format!(
+                    "  {}:L{}-{}  {} ({:?})\n",
+                    h.path, h.start_line, h.end_line, h.symbol, h.kind
+                ));
+            }
+            return Ok(out);
+        }
+
+        let root = &root_hits[0];
+
+        // BFS over the call graph. Mark the root + each chunk we render in
+        // the local visited set, so the same symbol never expands twice in
+        // one response (otherwise mutually-recursive functions loop). Also
+        // pipe each rendered chunk through the session dedup tracker so
+        // pluck.search / pluck.read are aware of what expand revealed.
+        let mut visited: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        visited.insert(root.chunk_id);
+        {
+            let mut s = self.inner.session.lock().expect("session mutex");
+            s.mark_seen(root.chunk_id);
+        }
+
+        let mut out = format!(
+            "{}:L{}-{}  {} ({:?})\n",
+            root.path, root.start_line, root.end_line, root.symbol, root.kind
+        );
+        out.push_str(&root.content);
+        if !out.ends_with('\n') {
+            out.push('\n');
+        }
+
+        // Hop 1: direct callees of the root.
+        let mut frontier: Vec<String> = callees_of(root);
+        let mut total_rendered = 0usize;
+        let max_per_level = 30;
+
+        for level in 1..=hop {
+            if frontier.is_empty() {
+                break;
+            }
+            out.push_str(&format!("\n=== hop {level} ===\n"));
+            let mut next_frontier: Vec<String> = Vec::new();
+
+            for callee_name in frontier.iter().take(max_per_level) {
+                let leaf = callee_leaf(callee_name);
+                let hits = self
+                    .inner
+                    .index
+                    .lookup_symbol(leaf, None)
+                    .unwrap_or_default();
+                let Some(hit) = hits.first() else {
+                    // External / unindexed callee — emit a one-liner so
+                    // the agent knows we saw it but didn't follow.
+                    out.push_str(&format!("  · {callee_name}  (external / not indexed)\n"));
+                    continue;
+                };
+                if !visited.insert(hit.chunk_id) {
+                    out.push_str(&format!(
+                        "  · {} — already expanded above\n",
+                        hit.symbol
+                    ));
+                    continue;
+                }
+                {
+                    let mut s = self.inner.session.lock().expect("session mutex");
+                    s.mark_seen(hit.chunk_id);
+                }
+                let nested = pluck_core::callees::extract_callees(
+                    &hit.content,
+                    lang_for_path(&hit.path),
+                );
+                out.push_str(&format!(
+                    "  → {}:L{}-{}  {} ({:?})\n    {}\n",
+                    hit.path,
+                    hit.start_line,
+                    hit.end_line,
+                    hit.symbol,
+                    hit.kind,
+                    hit.signature.replace('\n', "\n    ")
+                ));
+                if !nested.is_empty() {
+                    out.push_str("    calls: ");
+                    out.push_str(&nested.join(", "));
+                    out.push('\n');
+                }
+                next_frontier.extend(nested);
+                total_rendered += 1;
+            }
+
+            if frontier.len() > max_per_level {
+                out.push_str(&format!(
+                    "  (+ {} more callees at this hop suppressed — re-call with a path-qualified name to drill into specific branches)\n",
+                    frontier.len() - max_per_level
+                ));
+            }
+
+            frontier = dedup_keep_order(next_frontier);
+        }
+
+        out.push_str(&format!(
+            "\n[expanded {} callees across {} hop(s)]\n",
+            total_rendered, hop
+        ));
+        Ok(out)
     }
 }
 
@@ -476,6 +605,40 @@ fn parse_line_range(s: &str) -> Result<(u32, u32), McpError> {
         ));
     }
     Ok((a, b))
+}
+
+fn callees_of(hit: &SearchHit) -> Vec<String> {
+    extract_callees(&hit.content, lang_for_path(&hit.path))
+}
+
+fn lang_for_path(path: &str) -> Language {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(Language::from_extension)
+        .unwrap_or(Language::TypeScript)
+}
+
+/// `db.user.findOne` → `findOne` ; `Logger::new` → `new` ; bare names pass through.
+fn callee_leaf(name: &str) -> &str {
+    if let Some(after) = name.rsplit_once("::") {
+        return after.1;
+    }
+    if let Some(after) = name.rsplit_once('.') {
+        return after.1;
+    }
+    name
+}
+
+fn dedup_keep_order(xs: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(xs.len());
+    for x in xs {
+        if seen.insert(x.clone()) {
+            out.push(x);
+        }
+    }
+    out
 }
 
 fn render_full(hits: &[SearchHit]) -> String {
@@ -551,6 +714,59 @@ mod tests {
             }))
             .await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pluck_expand_includes_root_body_and_hop_one_callees() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .expand(Parameters(ExpandParams {
+                name: "chunk_source".into(),
+                hop: 1,
+            }))
+            .await
+            .expect("expand");
+
+        // Root body is included.
+        assert!(out.contains("pub fn chunk_source"), "missing root sig: {out}");
+        // Hop 1 header is present.
+        assert!(out.contains("=== hop 1 ==="), "missing hop header: {out}");
+        // Footer prints summary.
+        assert!(out.contains("[expanded"), "missing footer: {out}");
+    }
+
+    #[tokio::test]
+    async fn pluck_expand_unknown_name() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let out = server
+            .expand(Parameters(ExpandParams {
+                name: "definitely_not_a_real_function_xyzzy".into(),
+                hop: 1,
+            }))
+            .await
+            .expect("expand");
+        assert!(out.contains("no symbol"), "got: {out}");
+    }
+
+    #[test]
+    fn callee_leaf_strips_namespace_prefixes() {
+        assert_eq!(callee_leaf("foo"), "foo");
+        assert_eq!(callee_leaf("db.user.findOne"), "findOne");
+        assert_eq!(callee_leaf("Logger::new"), "new");
+        assert_eq!(callee_leaf("std::collections::HashMap::new"), "new");
     }
 
     #[tokio::test]
