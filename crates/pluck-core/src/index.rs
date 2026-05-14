@@ -95,6 +95,48 @@ impl PluckIndex {
         self.search_with_cutoff(query_str, k, 0.0)
     }
 
+    /// Exact lookup by symbol name (the `symbol` field).
+    ///
+    /// `name` is matched as a term against the tantivy default tokenizer
+    /// applied to the symbol field. Returns every chunk whose symbol
+    /// matches; an optional `path_contains` filter narrows ambiguous
+    /// matches (e.g. when two files both define `handleLogin`).
+    pub fn lookup_symbol(
+        &self,
+        name: &str,
+        path_contains: Option<&str>,
+    ) -> Result<Vec<SearchHit>> {
+        use tantivy::collector::TopDocs;
+        use tantivy::query::QueryParser;
+
+        let reader = self.inner.reader().context("open reader")?;
+        let searcher = reader.searcher();
+        let qp = QueryParser::for_index(&self.inner, vec![self.fields.symbol]);
+        // Tantivy's default tokenizer lowercases — match its behavior here.
+        let q = qp
+            .parse_query(&name.to_lowercase())
+            .context("parse symbol query")?;
+        let top = searcher
+            .search(&q, &TopDocs::with_limit(64).order_by_score())
+            .context("symbol search")?;
+
+        let mut hits = Vec::new();
+        for (score, addr) in top {
+            let doc: TantivyDocument = searcher.doc(addr).context("doc retrieve")?;
+            let hit = self.doc_to_hit(score, &doc)?;
+            // Require exact symbol equality (case-insensitive) — the BM25
+            // path may surface near-matches we don't want here.
+            if hit.symbol.eq_ignore_ascii_case(name)
+                && path_contains
+                    .map(|p| hit.path.contains(p))
+                    .unwrap_or(true)
+            {
+                hits.push(hit);
+            }
+        }
+        Ok(hits)
+    }
+
     /// Same as `search`, but drops every hit whose BM25 score is below
     /// `cutoff_frac × top_score`. With `cutoff_frac = 0.12` this implements
     /// the 12% noise floor described in docs/MCP_TOOLS.md.

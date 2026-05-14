@@ -247,9 +247,88 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/symbol.md")]
     #[tool(name = "pluck.symbol")]
-    async fn symbol(&self, Parameters(p): Parameters<SymbolParams>) -> Result<String, McpError> {
-        let _ = p;
-        Ok("pluck.symbol — not yet implemented (Phase 1 follow-up). Use pluck.search with the symbol name as a query, or pluck.read --lines on the symbol's range.".into())
+    pub async fn symbol(
+        &self,
+        Parameters(p): Parameters<SymbolParams>,
+    ) -> Result<String, McpError> {
+        // Path-qualified form: `auth/handleLogin` → look up `handleLogin`
+        // and require the chunk's path to contain `auth`.
+        let (path_filter, name) = match p.name.rsplit_once('/') {
+            Some((path, sym)) => (Some(path), sym),
+            None => (None, p.name.as_str()),
+        };
+
+        let hits = self
+            .inner
+            .index
+            .lookup_symbol(name, path_filter)
+            .map_err(|e| McpError::internal_error(format!("symbol lookup failed: {e}"), None))?;
+
+        if hits.is_empty() {
+            return Ok(format!(
+                "no symbol named `{}` found{}.\n\nTry pluck.search with the same name as a free-text query — BM25 picks up partial / fuzzy matches.\n",
+                p.name,
+                path_filter.map(|p| format!(" under path `{p}`")).unwrap_or_default()
+            ));
+        }
+
+        // Apply session dedup, like pluck.search. New chunks get full
+        // bodies; chunks the agent already saw this session collapse to
+        // a placeholder.
+        let (already_shown, fresh): (Vec<_>, Vec<_>) = {
+            let session = self.inner.session.lock().expect("session mutex");
+            hits.into_iter()
+                .partition(|h| session.was_seen(h.chunk_id))
+        };
+        {
+            let mut s = self.inner.session.lock().expect("session mutex");
+            for h in &fresh {
+                s.mark_seen(h.chunk_id);
+            }
+        }
+
+        // Ambiguous case (more than one fresh hit): emit a one-line list
+        // instead of dumping every body. The agent can then re-call with
+        // a path-qualified name. The unit tests pin this behavior.
+        if fresh.len() > 1 {
+            let mut out = format!(
+                "`{}` is ambiguous — {} candidates. Disambiguate with `<path>/<name>`:\n",
+                p.name,
+                fresh.len()
+            );
+            for h in &fresh {
+                out.push_str(&format!(
+                    "  {}:L{}-{}  {} ({:?})\n",
+                    h.path, h.start_line, h.end_line, h.symbol, h.kind
+                ));
+            }
+            for h in &already_shown {
+                out.push_str(&format!(
+                    "  [already-shown: {}:L{}-{} {}]\n",
+                    h.path, h.start_line, h.end_line, h.symbol
+                ));
+            }
+            return Ok(out);
+        }
+
+        let mut out = String::new();
+        for h in &fresh {
+            out.push_str(&format!(
+                "{}:L{}-{}  {} ({:?})\n",
+                h.path, h.start_line, h.end_line, h.symbol, h.kind
+            ));
+            out.push_str(&h.content);
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        for h in &already_shown {
+            out.push_str(&format!(
+                "[already-shown: {}:L{}-{} {}]\n",
+                h.path, h.start_line, h.end_line, h.symbol
+            ));
+        }
+        Ok(out)
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/peek.md")]
@@ -376,6 +455,83 @@ mod tests {
             }))
             .await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn pluck_symbol_returns_named_function_body() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        // chunk_source is a public function defined in pluck-core/src/chunker/mod.rs.
+        let out = server
+            .symbol(Parameters(SymbolParams {
+                name: "chunk_source".into(),
+            }))
+            .await
+            .expect("symbol lookup");
+
+        assert!(
+            out.contains("pub fn chunk_source"),
+            "expected symbol body, got: {out}"
+        );
+        assert!(out.contains("chunker/mod.rs"), "missing path: {out}");
+    }
+
+    #[tokio::test]
+    async fn pluck_symbol_unknown_name_returns_no_match_message() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let out = server
+            .symbol(Parameters(SymbolParams {
+                name: "definitely_not_a_real_function_xyzzy".into(),
+            }))
+            .await
+            .expect("symbol lookup");
+        assert!(out.contains("no symbol"), "got: {out}");
+    }
+
+    #[tokio::test]
+    async fn pluck_symbol_repeat_call_uses_placeholder() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let first = server
+            .symbol(Parameters(SymbolParams {
+                name: "chunk_source".into(),
+            }))
+            .await
+            .expect("first lookup");
+        let second = server
+            .symbol(Parameters(SymbolParams {
+                name: "chunk_source".into(),
+            }))
+            .await
+            .expect("second lookup");
+        // Second call should be much shorter (placeholder line only).
+        assert!(
+            second.len() < first.len() / 4,
+            "second call should collapse to placeholder; first={} second={}",
+            first.len(),
+            second.len()
+        );
+        assert!(
+            second.contains("[already-shown:"),
+            "expected placeholder in repeat: {second}"
+        );
     }
 
     #[tokio::test]
