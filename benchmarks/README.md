@@ -19,8 +19,6 @@ benchmarks/
 ├── runners/          one YAML per agent setup
 │   ├── bash.yaml         (Claude Code + Bash only — baseline)
 │   ├── ripgrep.yaml      (Claude Code + ripgrep)
-│   ├── a prior-art code search tool.yaml    (Claude Code + a prior-art code search tool MCP)
-│   ├── .yaml       (Claude Code +  MCP)
 │   └── pluck.yaml        (Claude Code + pluck MCP)
 ├── repos/            git submodules pointing at fixed revisions of test repos
 └── results/          per-run JSON output (gitignored after Phase 0)

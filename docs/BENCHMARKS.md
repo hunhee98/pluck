@@ -19,9 +19,11 @@ Total per full run: `5 scenarios × 5 runners × 4 sizes × 5 reps = 500 session
 |--------|-------|
 | `bash` | Claude Code + Bash tool only (cat / grep / ls) |
 | `ripgrep` | Claude Code + Bash + ripgrep on PATH |
-| `a prior-art code search tool` | Claude Code + a prior-art code search tool MCP |
-| `` | Claude Code +  MCP |
 | `pluck` | Claude Code + pluck MCP (this project) |
+
+Additional third-party MCP code-search tools may be benchmarked separately
+under `benchmarks/external/`; the public dashboard reports the bash and
+ripgrep baselines.
 
 Same model (`claude-sonnet-4-6`), same prompt, same starting commit.
 
@@ -61,8 +63,6 @@ Scenario × Repo:    fix-bug × medium
 
   Bash only       ████████████████████████████████  48,000
   ripgrep         █████████████████████████████      44,000
-  a prior-art code search tool       ████████████████                   24,000
-            █████████████                      19,000
   pluck           ████                                5,000   (-90%)
 ```
 

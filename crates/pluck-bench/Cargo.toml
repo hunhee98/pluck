@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Reproducible benchmark harness for pluck vs cat/grep/prior-art tools"
+description = "Reproducible benchmark harness comparing pluck against cat/grep workflows"
 
 [[bin]]
 name = "pluck-bench"

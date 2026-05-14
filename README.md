@@ -76,11 +76,11 @@ explicit opt-in the agent has to choose.
 
 Reproducible. Run nightly in CI. Public dashboard. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
-| Scenario | Repo size | Bash only | a prior-art code search tool |  | **pluck** |
-|----------|-----------|-----------|-----------|--------|-----------|
-| fix bug | medium (50k LOC) | 48k tok | 24k | 19k | **5k** |
-| refactor | large (500k LOC) | 112k tok | 51k | 44k | **12k** |
-| explore | mono | 89k tok | 38k | 33k | **8k** |
+| Scenario | Repo size | Bash only | **pluck** |
+|----------|-----------|-----------|-----------|
+| fix bug | medium (50k LOC) | 48k tok | **5k** |
+| refactor | large (500k LOC) | 112k tok | **12k** |
+| explore | mono | 89k tok | **8k** |
 
 _Numbers above are projection targets validated against the harness in `crates/pluck-bench`._
 

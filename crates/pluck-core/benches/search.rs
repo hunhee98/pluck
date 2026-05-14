@@ -2,8 +2,8 @@
 //!
 //! Models a synthetic multi-file repo, runs realistic agent queries through
 //! each retrieval strategy, and reports cl100k_base token counts for each.
-//! Mirrors the methodology used in similar tools, but with tiktoken
-//! (not the 4-chars-per-token approximation) for accuracy.
+//! Uses tiktoken-rs directly so the numbers are tokenizer-accurate rather
+//! than relying on the 4-chars-per-token rule of thumb.
 
 use pluck_core::chunker::{chunk_source, Language};
 use pluck_core::index::{PluckIndex, SearchHit};
@@ -458,8 +458,8 @@ fn cat_matched_files(query: &str, repo: &[(String, String)]) -> String {
     out
 }
 
-/// pluck.search rendered with full chunk bodies (verbose, equivalent to
-/// a prior-art code search tool `--json` mode).
+/// pluck.search rendered with full chunk bodies. The lossless default —
+/// preserves every byte of every matched chunk for editing/debug tasks.
 fn pluck_search_render_full(hits: &[SearchHit]) -> String {
     let mut out = String::new();
     for h in hits {
@@ -472,8 +472,9 @@ fn pluck_search_render_full(hits: &[SearchHit]) -> String {
 }
 
 /// `--compact` rendering: score, path:range, then only the lines inside the
-/// chunk that contain a query keyword (line number + trimmed content). This
-/// is the apples-to-apples comparison with a prior-art code search tool's headline `-93%` claim.
+/// chunk that contain a query keyword (line number + trimmed content). Opt-in
+/// lossy mode useful for pure discovery; loses context-line and body bytes
+/// the agent would need for editing.
 fn pluck_search_render_compact(hits: &[SearchHit], query: &str) -> String {
     let words = query_words(query);
     let mut out = String::new();
