@@ -12,6 +12,7 @@ pub mod indexer;
 pub mod outliner;
 pub mod semantic;
 pub mod store;
+pub mod tokenizer;
 pub mod symbols;
 pub mod watcher;
 

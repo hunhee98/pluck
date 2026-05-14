@@ -13,12 +13,16 @@ use tantivy::{
     collector::TopDocs,
     doc,
     query::QueryParser,
-    schema::{Field, Schema, Value, FAST, INDEXED, STORED, STRING, TEXT},
+    schema::{
+        Field, IndexRecordOption, Schema, TextFieldIndexing, TextOptions, Value, FAST, INDEXED,
+        STORED, STRING,
+    },
     Index as TantivyIndex, IndexWriter, TantivyDocument, Term,
 };
 
 use crate::chunker::{Chunk, ChunkKind};
 use crate::semantic::{cosine_similarity, StaticEncoder};
+use crate::tokenizer::{PluckTokenizer, TOKENIZER_NAME};
 
 /// BM25F per-field boosts.
 ///
@@ -61,16 +65,28 @@ struct Fields {
     content: Field,
 }
 
+/// Text option for fields that participate in BM25 — uses the custom
+/// `pluck` tokenizer registered in [`register_pluck_tokenizer`].
+fn pluck_text_field() -> TextOptions {
+    TextOptions::default()
+        .set_indexing_options(
+            TextFieldIndexing::default()
+                .set_tokenizer(TOKENIZER_NAME)
+                .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+        )
+        .set_stored()
+}
+
 fn build_schema() -> (Schema, Fields) {
     let mut sb = Schema::builder();
     let chunk_id = sb.add_u64_field("chunk_id", INDEXED | STORED | FAST);
     let path = sb.add_text_field("path", STRING | STORED);
-    let symbol = sb.add_text_field("symbol", TEXT | STORED);
+    let symbol = sb.add_text_field("symbol", pluck_text_field());
     let kind = sb.add_text_field("kind", STRING | STORED);
     let start_line = sb.add_u64_field("start_line", STORED);
     let end_line = sb.add_u64_field("end_line", STORED);
-    let signature = sb.add_text_field("signature", TEXT | STORED);
-    let content = sb.add_text_field("content", TEXT | STORED);
+    let signature = sb.add_text_field("signature", pluck_text_field());
+    let content = sb.add_text_field("content", pluck_text_field());
     let schema = sb.build();
     (
         schema,
@@ -87,10 +103,19 @@ fn build_schema() -> (Schema, Fields) {
     )
 }
 
+/// Every freshly opened `PluckIndex` must register the `pluck` tokenizer
+/// before any reader / writer talks to it — otherwise tantivy reports
+/// "tokenizer not found" on the first BM25 query. Cheap (Clone of a
+/// unit struct).
+fn register_pluck_tokenizer(index: &TantivyIndex) {
+    index.tokenizers().register(TOKENIZER_NAME, PluckTokenizer);
+}
+
 impl PluckIndex {
     pub fn in_ram() -> Result<Self> {
         let (schema, fields) = build_schema();
         let inner = TantivyIndex::create_in_ram(schema);
+        register_pluck_tokenizer(&inner);
         Ok(Self {
             inner,
             fields,
@@ -106,6 +131,7 @@ impl PluckIndex {
             Ok(idx) => idx,
             Err(_) => TantivyIndex::create_in_dir(dir, schema).context("create tantivy dir")?,
         };
+        register_pluck_tokenizer(&inner);
         Ok(Self {
             inner,
             fields,
@@ -584,6 +610,40 @@ function formatAuthErrorLine(line: string): string {
         // a non-empty ranking and not crash.
         assert!(!hits.is_empty());
         assert!(hits.iter().any(|h| h.symbol == "validateSession"));
+    }
+
+    #[test]
+    fn tokenizer_splits_camelcase_for_partial_match() {
+        let src = r#"
+class HandlerStack { run(): void {} }
+class CorsMiddleware { wrap(): void {} }
+"#;
+        let idx = index_one_file(src, "x.ts", Language::TypeScript);
+        // Partial-match: query `handler` should surface `HandlerStack`
+        // even though no field contains the literal token `handler` in
+        // isolation. The tokenizer's camelCase splitter is the only way
+        // this can match.
+        let hits = idx.search_with_cutoff("handler", 5, 0.0).unwrap();
+        assert!(
+            hits.iter().any(|h| h.symbol == "HandlerStack"),
+            "partial camelCase match missed: {:?}",
+            hits.iter().map(|h| &h.symbol).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tokenizer_indexes_non_ascii_identifiers() {
+        // A symbol with Hangul letters should survive the index and be
+        // findable by either part of the underscore-split name. The same
+        // path works for CJK or any \p{L} script.
+        let src = "function 의존성_검사(x: string): void {}\n";
+        let idx = index_one_file(src, "deps.ts", Language::TypeScript);
+        let hits = idx.search_with_cutoff("의존성", 5, 0.0).unwrap();
+        assert!(
+            hits.iter().any(|h| h.symbol == "의존성_검사"),
+            "unicode identifier missed: {:?}",
+            hits.iter().map(|h| &h.symbol).collect::<Vec<_>>()
+        );
     }
 
     #[test]

@@ -33,6 +33,7 @@ tokenizers.workspace = true
 safetensors.workspace = true
 hf-hub.workspace = true
 ndarray.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
