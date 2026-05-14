@@ -36,8 +36,8 @@ async fn main() -> Result<()> {
     let repo = args
         .repo
         .unwrap_or_else(|| std::env::current_dir().expect("current dir"));
-    let repo = std::fs::canonicalize(&repo)
-        .with_context(|| format!("canonicalize repo {repo:?}"))?;
+    let repo =
+        std::fs::canonicalize(&repo).with_context(|| format!("canonicalize repo {repo:?}"))?;
 
     tracing::info!(version = pluck_core::version(), repo = ?repo, "pluckd starting");
 

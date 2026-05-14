@@ -505,8 +505,7 @@ fn main() {
     {
         let mut w = idx.writer().expect("writer");
         for (path, src) in &files {
-            let chunks = chunk_source(src, Language::TypeScript)
-                .unwrap_or_default();
+            let chunks = chunk_source(src, Language::TypeScript).unwrap_or_default();
             for c in &chunks {
                 w.add_chunk(path.as_str(), c).expect("add chunk");
             }
@@ -548,9 +547,7 @@ fn main() {
     for (label, query) in queries {
         let rg_out = rg_matches(query, &files);
         let cat_out = cat_matched_files(query, &files);
-        let hits = idx
-            .search_with_cutoff(query, 10, 0.12)
-            .unwrap_or_default();
+        let hits = idx.search_with_cutoff(query, 10, 0.12).unwrap_or_default();
         let full = pluck_search_render_full(&hits);
         let compact = pluck_search_render_compact(&hits, query);
 

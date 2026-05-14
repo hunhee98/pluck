@@ -28,8 +28,7 @@ use pluck_core::watcher::{spawn_watcher, WatcherHandle, DEFAULT_DEBOUNCE};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router,
-    ErrorData as McpError, ServerHandler,
+    schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use serde::Deserialize;
 
@@ -198,10 +197,7 @@ impl PluckServer {
             return Ok(out);
         }
 
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let lang = Language::from_extension(ext);
         let display = path.to_string_lossy();
         let outline = outline_source(&src, lang, &display);
@@ -210,7 +206,10 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/search.md")]
     #[tool(name = "search")]
-    pub async fn search(&self, Parameters(p): Parameters<SearchParams>) -> Result<String, McpError> {
+    pub async fn search(
+        &self,
+        Parameters(p): Parameters<SearchParams>,
+    ) -> Result<String, McpError> {
         let hits = self
             .inner
             .index
@@ -228,8 +227,7 @@ impl PluckServer {
         // compact rendering.
         let (already_shown, fresh): (Vec<_>, Vec<_>) = {
             let session = self.inner.session.lock().expect("session mutex");
-            hits.into_iter()
-                .partition(|h| session.was_seen(h.chunk_id))
+            hits.into_iter().partition(|h| session.was_seen(h.chunk_id))
         };
 
         // Mark the fresh chunks before we lose the borrow scope.
@@ -309,8 +307,7 @@ impl PluckServer {
         // a placeholder.
         let (already_shown, fresh): (Vec<_>, Vec<_>) = {
             let session = self.inner.session.lock().expect("session mutex");
-            hits.into_iter()
-                .partition(|h| session.was_seen(h.chunk_id))
+            hits.into_iter().partition(|h| session.was_seen(h.chunk_id))
         };
         {
             let mut s = self.inner.session.lock().expect("session mutex");
@@ -365,10 +362,7 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/peek.md")]
     #[tool(name = "peek")]
-    pub async fn peek(
-        &self,
-        Parameters(p): Parameters<PeekParams>,
-    ) -> Result<String, McpError> {
+    pub async fn peek(&self, Parameters(p): Parameters<PeekParams>) -> Result<String, McpError> {
         let (path_filter, name) = match p.name.rsplit_once('/') {
             Some((path, sym)) => (Some(path), sym),
             None => (None, p.name.as_str()),
@@ -384,7 +378,9 @@ impl PluckServer {
             return Ok(format!(
                 "no symbol named `{}` found{}.\n",
                 p.name,
-                path_filter.map(|p| format!(" under path `{p}`")).unwrap_or_default(),
+                path_filter
+                    .map(|p| format!(" under path `{p}`"))
+                    .unwrap_or_default(),
             ));
         }
 
@@ -521,20 +517,15 @@ impl PluckServer {
                     continue;
                 };
                 if !visited.insert(hit.chunk_id) {
-                    out.push_str(&format!(
-                        "  · {} — already expanded above\n",
-                        hit.symbol
-                    ));
+                    out.push_str(&format!("  · {} — already expanded above\n", hit.symbol));
                     continue;
                 }
                 {
                     let mut s = self.inner.session.lock().expect("session mutex");
                     s.mark_seen(hit.chunk_id);
                 }
-                let nested = pluck_core::callees::extract_callees(
-                    &hit.content,
-                    lang_for_path(&hit.path),
-                );
+                let nested =
+                    pluck_core::callees::extract_callees(&hit.content, lang_for_path(&hit.path));
                 out.push_str(&format!(
                     "  → {}:L{}-{}  {} ({:?})\n    {}\n",
                     hit.path,
@@ -574,22 +565,21 @@ impl PluckServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for PluckServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_instructions(
-                "pluck — token-efficient code reading. Prefer pluck.read/search/grep \
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+            "pluck — token-efficient code reading. Prefer pluck.read/search/grep \
                  over Bash cat/grep/rg whenever the target is inside the indexed repo. \
                  All pluck tools have a --raw or equivalent fallback that matches \
                  cat/grep byte-for-byte if you need exact parity.",
-            )
+        )
     }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn parse_line_range(s: &str) -> Result<(u32, u32), McpError> {
-    let (a, b) = s
-        .split_once('-')
-        .ok_or_else(|| McpError::invalid_params(format!("expected 'start-end', got {s:?}"), None))?;
+    let (a, b) = s.split_once('-').ok_or_else(|| {
+        McpError::invalid_params(format!("expected 'start-end', got {s:?}"), None)
+    })?;
     let a: u32 = a
         .trim()
         .parse()
@@ -735,7 +725,10 @@ mod tests {
             .expect("expand");
 
         // Root body is included.
-        assert!(out.contains("pub fn chunk_source"), "missing root sig: {out}");
+        assert!(
+            out.contains("pub fn chunk_source"),
+            "missing root sig: {out}"
+        );
         // Hop 1 header is present.
         assert!(out.contains("=== hop 1 ==="), "missing hop header: {out}");
         // Footer prints summary.

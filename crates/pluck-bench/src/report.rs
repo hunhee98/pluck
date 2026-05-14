@@ -30,10 +30,7 @@ pub fn print_markdown(out: &mut impl Write, report: &ScenarioReport) -> Result<(
     writeln!(out)?;
 
     // Summary table
-    writeln!(
-        out,
-        "| Runner | Calls | Total tokens | Bug surfaced? |"
-    )?;
+    writeln!(out, "| Runner | Calls | Total tokens | Bug surfaced? |")?;
     writeln!(out, "|--------|------:|-------------:|:-------------:|")?;
     for w in &report.workflows {
         writeln!(

@@ -37,7 +37,12 @@ impl WorkflowRun {
 }
 
 pub trait Runner {
+    /// Display name. Kept for future report rendering and runner-listing
+    /// commands; the current driver renders runners via their
+    /// `WorkflowRun.runner` field.
+    #[allow(dead_code)]
     fn name(&self) -> &'static str;
+
     fn run(&self, scenario: &Scenario) -> Result<WorkflowRun>;
 }
 

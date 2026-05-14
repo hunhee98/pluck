@@ -9,7 +9,9 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::report::{print_markdown, save_json, ScenarioReport};
 use crate::runners::{BashRunner, PluckRunner, Runner};
-use crate::scenarios::{load as load_scenario, Scenario};
+use crate::scenarios::load as load_scenario;
+#[cfg(test)]
+use crate::scenarios::Scenario;
 use crate::scoring::{bpe, score};
 
 pub async fn run(
@@ -18,8 +20,8 @@ pub async fn run(
     _repetitions: u32,
     output_dir: &str,
 ) -> Result<()> {
-    let scenario = load_scenario(scenario_name)
-        .ok_or_else(|| anyhow!("unknown scenario: {scenario_name}"))?;
+    let scenario =
+        load_scenario(scenario_name).ok_or_else(|| anyhow!("unknown scenario: {scenario_name}"))?;
 
     let runners = select_runners(runner_filter)?;
     let bpe = bpe()?;
@@ -110,20 +112,25 @@ mod tests {
         assert_eq!(report.workflows.len(), 2);
         // Both workflows must surface the seeded bug.
         for w in &report.workflows {
-            assert!(
-                w.found_bug,
-                "{} failed to surface bug marker",
-                w.runner
-            );
+            assert!(w.found_bug, "{} failed to surface bug marker", w.runner);
         }
         // pluck should beat bash on tokens — that's the whole point of the
         // scenario. If this regresses we want a loud failure.
-        let bash = report.workflows.iter().find(|w| w.runner.starts_with("bash")).unwrap();
-        let pluck = report.workflows.iter().find(|w| w.runner.starts_with("pluck")).unwrap();
+        let bash = report
+            .workflows
+            .iter()
+            .find(|w| w.runner.starts_with("bash"))
+            .unwrap();
+        let pluck = report
+            .workflows
+            .iter()
+            .find(|w| w.runner.starts_with("pluck"))
+            .unwrap();
         assert!(
             pluck.total_tokens < bash.total_tokens,
             "pluck must use fewer tokens than bash; got pluck={} bash={}",
-            pluck.total_tokens, bash.total_tokens
+            pluck.total_tokens,
+            bash.total_tokens
         );
     }
 }

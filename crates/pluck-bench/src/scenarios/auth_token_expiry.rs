@@ -10,8 +10,7 @@ use super::Scenario;
 pub fn scenario() -> Scenario {
     Scenario {
         name: "fix-auth-token-expiry",
-        task_prompt:
-            "Find and fix the auth-session expiry check. Sessions should be \
+        task_prompt: "Find and fix the auth-session expiry check. Sessions should be \
              treated as EXPIRED when expiresAt is in the past (< now()), but \
              the current code inverts the comparison.",
         repo: build_repo(),

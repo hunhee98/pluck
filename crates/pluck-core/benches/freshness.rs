@@ -53,8 +53,8 @@ async fn measure_freshness(n_files: usize, n_trials: usize) -> Vec<Duration> {
     let idx = Arc::new(PluckIndex::in_ram().unwrap());
     index_repo(&idx, &repo).unwrap();
 
-    let _watcher = spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE)
-        .expect("spawn watcher");
+    let _watcher =
+        spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE).expect("spawn watcher");
 
     // Brief grace for notify to register before the first measurement.
     tokio::time::sleep(Duration::from_millis(100)).await;

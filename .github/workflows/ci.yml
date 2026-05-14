@@ -5,9 +5,23 @@ on:
     branches: [main, develop]
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
 jobs:
-  build:
-    name: build / test / clippy
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy_and_test:
+    name: clippy + test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -15,21 +29,22 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: fmt
-        run: cargo fmt --all -- --check
+      # pluck.grep tests shell out to ripgrep.
+      - name: Install ripgrep (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install ripgrep (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install ripgrep
 
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: build
-        run: cargo build --workspace --release
-
-      - name: test
-        run: cargo test --workspace --release
+      - name: test (debug)
+        run: cargo test --workspace

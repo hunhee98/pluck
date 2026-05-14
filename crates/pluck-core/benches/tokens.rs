@@ -51,8 +51,14 @@ fn main() {
             s
         }),
         ("medium realistic (5 fns, ~120 lines)", gen_realistic_fns(5)),
-        ("large realistic (25 fns, ~600 lines)", gen_realistic_fns(25)),
-        ("xl realistic (100 fns, ~2400 lines)", gen_realistic_fns(100)),
+        (
+            "large realistic (25 fns, ~600 lines)",
+            gen_realistic_fns(25),
+        ),
+        (
+            "xl realistic (100 fns, ~2400 lines)",
+            gen_realistic_fns(100),
+        ),
         ("class (1 class + 10 methods)", gen_realistic_class(10)),
         ("class (1 class + 50 methods)", gen_realistic_class(50)),
     ];
@@ -66,7 +72,11 @@ fn main() {
             0
         } else {
             let nl = src.bytes().filter(|&b| b == b'\n').count();
-            if src.ends_with('\n') { nl } else { nl + 1 }
+            if src.ends_with('\n') {
+                nl
+            } else {
+                nl + 1
+            }
         };
         let o = outline_source(src, Some(Language::TypeScript), "fixture.ts");
         let rendered = render(&o);
@@ -77,9 +87,7 @@ fn main() {
         } else {
             0
         };
-        println!(
-            "| {name} | {lines} | {cat_tokens} | {pluck_tokens} | {pct}% |"
-        );
+        println!("| {name} | {lines} | {cat_tokens} | {pluck_tokens} | {pct}% |");
     }
     println!();
 }

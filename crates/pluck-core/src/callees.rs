@@ -98,13 +98,21 @@ fn handle(req: Request) -> Response {
 }
 "#;
         let callees = extract_callees(src, Language::Rust);
-        assert!(callees.contains(&"parse_body".to_string()), "got: {callees:?}");
+        assert!(
+            callees.contains(&"parse_body".to_string()),
+            "got: {callees:?}"
+        );
         // Method calls show up as `obj.field` in tree-sitter-rust (the
         // function field of the call_expression is a field_expression).
-        assert!(callees.contains(&"logger.info".to_string()), "got: {callees:?}");
+        assert!(
+            callees.contains(&"logger.info".to_string()),
+            "got: {callees:?}"
+        );
         assert!(callees.contains(&"println".to_string()), "got: {callees:?}");
         assert!(
-            callees.iter().any(|c| c.contains("Logger") || c.contains("Response")),
+            callees
+                .iter()
+                .any(|c| c.contains("Logger") || c.contains("Response")),
             "expected a type-prefixed callee, got: {callees:?}"
         );
     }

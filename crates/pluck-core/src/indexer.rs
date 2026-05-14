@@ -53,7 +53,9 @@ pub fn index_repo_into(
 
     for entry in walker {
         let Ok(entry) = entry else { continue };
-        let Some(ft) = entry.file_type() else { continue };
+        let Some(ft) = entry.file_type() else {
+            continue;
+        };
         if !ft.is_file() {
             continue;
         }
@@ -253,10 +255,7 @@ mod tests {
                 "user.ts".to_string(),
                 "class User { greet() {} logout() {} }\n".to_string(),
             ),
-            (
-                "skip.unknown".to_string(),
-                "ignored".to_string(),
-            ),
+            ("skip.unknown".to_string(), "ignored".to_string()),
         ];
         let stats = index_files_in_memory(&idx, &files).unwrap();
         assert_eq!(stats.files_seen, 3);
@@ -268,27 +267,15 @@ mod tests {
     #[test]
     fn index_repo_on_tempdir_walks_files() {
         let tmp = tempdir().expect("temp dir");
-        std::fs::write(
-            tmp.path().join("a.ts"),
-            "function alpha() { return 1; }\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("a.ts"), "function alpha() { return 1; }\n").unwrap();
         std::fs::create_dir_all(tmp.path().join("sub")).unwrap();
-        std::fs::write(
-            tmp.path().join("sub/b.rs"),
-            "fn beta() -> i32 { 2 }\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("sub/b.rs"), "fn beta() -> i32 { 2 }\n").unwrap();
         // `.ignore` is respected without a git working tree — `.gitignore`
         // is only honored inside a real git repo (or with require_git(false)
         // on some versions of the ignore crate). `.ignore` covers the
         // non-git tarball-checkout case the test exercises.
         std::fs::write(tmp.path().join(".ignore"), "skipped.ts\n").unwrap();
-        std::fs::write(
-            tmp.path().join("skipped.ts"),
-            "function skipped() {}\n",
-        )
-        .unwrap();
+        std::fs::write(tmp.path().join("skipped.ts"), "function skipped() {}\n").unwrap();
 
         let idx = PluckIndex::in_ram().unwrap();
         let stats = index_repo(&idx, tmp.path()).unwrap();

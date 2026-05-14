@@ -183,7 +183,9 @@ fn cmd_grep(pattern: &str, rest: &[String], _raw: bool) -> Result<()> {
     cmd.stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
-    let status = cmd.status().context("failed to invoke `rg`; is ripgrep installed?")?;
+    let status = cmd
+        .status()
+        .context("failed to invoke `rg`; is ripgrep installed?")?;
     if !status.success() {
         // rg exits 1 when no matches found — propagate so shells see it,
         // but don't treat as an internal error.
@@ -242,10 +244,7 @@ fn print_compact(hits: &[SearchHit], query: &str) {
         .map(|w| w.to_lowercase())
         .collect();
     for h in hits {
-        println!(
-            "{:.4}\t{}:{}-{}",
-            h.score, h.path, h.start_line, h.end_line
-        );
+        println!("{:.4}\t{}:{}-{}", h.score, h.path, h.start_line, h.end_line);
         for (i, line) in h.content.lines().enumerate() {
             let lower = line.to_lowercase();
             if words.iter().any(|w| lower.contains(w)) {

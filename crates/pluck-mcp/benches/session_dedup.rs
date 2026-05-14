@@ -103,12 +103,8 @@ async fn main() {
     };
     println!("| Σ | total | **{a_total}** | **{b_total}** | **{total_pct}%** |");
     println!();
-    println!(
-        "Session dedup elides body bytes the agent already received in earlier calls,"
-    );
-    println!(
-        "replacing them with a one-line `[already-shown: …]` reference. Same chunks,"
-    );
+    println!("Session dedup elides body bytes the agent already received in earlier calls,");
+    println!("replacing them with a one-line `[already-shown: …]` reference. Same chunks,");
     println!("same metadata, zero information loss.");
     println!();
 }

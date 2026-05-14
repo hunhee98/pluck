@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use tiktoken_rs::CoreBPE;
 
-use crate::runners::{ToolCall, WorkflowRun};
+use crate::runners::WorkflowRun;
 use crate::scenarios::Scenario;
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,16 +57,3 @@ pub fn bpe() -> Result<CoreBPE> {
     tiktoken_rs::cl100k_base().context("load cl100k_base")
 }
 
-// Tiny accessor used by report rendering.
-pub fn step_summary(c: &ToolCall, tokens: usize) -> String {
-    format!("{:<14} {:<40} {} tok", c.tool, truncate(&c.query, 38), tokens)
-}
-
-fn truncate(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let mut out: String = s.chars().take(max - 1).collect();
-    out.push('…');
-    out
-}

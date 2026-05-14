@@ -10,12 +10,15 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 pub fn repo_hash(repo_path: &Path) -> Result<String> {
-    let canon = std::fs::canonicalize(repo_path)
-        .with_context(|| format!("canonicalize {repo_path:?}"))?;
+    let canon =
+        std::fs::canonicalize(repo_path).with_context(|| format!("canonicalize {repo_path:?}"))?;
     let mut h = Sha256::new();
     h.update(canon.to_string_lossy().as_bytes());
     let digest = h.finalize();
-    let hex = digest.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let hex = digest
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     Ok(hex[..16].to_string())
 }
 

@@ -12,10 +12,9 @@ use tree_sitter::{Parser, Query, QueryCursor};
 
 pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Language::from_extension(ext)
-        .with_context(|| format!("unsupported extension: {ext:?}"))?;
-    let src = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read {path:?}"))?;
+    let lang =
+        Language::from_extension(ext).with_context(|| format!("unsupported extension: {ext:?}"))?;
+    let src = std::fs::read_to_string(path).with_context(|| format!("failed to read {path:?}"))?;
     chunk_source(&src, lang)
 }
 
@@ -165,8 +164,14 @@ class AuthService {
 "#;
         let chunks = chunks_of(src);
         // expect: AuthService (class) + constructor (method) + login (method) + logout (method)
-        let class_chunks: Vec<_> = chunks.iter().filter(|c| c.kind == ChunkKind::Class).collect();
-        let method_chunks: Vec<_> = chunks.iter().filter(|c| c.kind == ChunkKind::Method).collect();
+        let class_chunks: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.kind == ChunkKind::Class)
+            .collect();
+        let method_chunks: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.kind == ChunkKind::Method)
+            .collect();
 
         assert_eq!(class_chunks.len(), 1, "expected 1 class chunk");
         assert_eq!(class_chunks[0].symbol, "AuthService");
@@ -186,7 +191,10 @@ export const handleRequest = async (req: Request): Promise<Response> => {
 };
 "#;
         let chunks = chunks_of(src);
-        let arrow_chunks: Vec<_> = chunks.iter().filter(|c| c.kind == ChunkKind::Function).collect();
+        let arrow_chunks: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.kind == ChunkKind::Function)
+            .collect();
         assert_eq!(arrow_chunks.len(), 1);
         assert_eq!(arrow_chunks[0].symbol, "handleRequest");
         assert_eq!(arrow_chunks[0].start_line, 2);
@@ -206,7 +214,10 @@ class TokenService {
 }
 "#;
         let chunks = chunks_of(src);
-        let methods: Vec<_> = chunks.iter().filter(|c| c.kind == ChunkKind::Method).collect();
+        let methods: Vec<_> = chunks
+            .iter()
+            .filter(|c| c.kind == ChunkKind::Method)
+            .collect();
         assert_eq!(methods.len(), 2);
         let names: Vec<&str> = methods.iter().map(|c| c.symbol.as_str()).collect();
         assert!(names.contains(&"verify"));
@@ -317,8 +328,14 @@ impl Config {
         let kinds: Vec<&ChunkKind> = chunks.iter().map(|c| &c.kind).collect();
         let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
 
-        assert!(kinds.contains(&&ChunkKind::Struct), "missing Struct: {chunks:?}");
-        assert!(kinds.contains(&&ChunkKind::Impl), "missing Impl: {chunks:?}");
+        assert!(
+            kinds.contains(&&ChunkKind::Struct),
+            "missing Struct: {chunks:?}"
+        );
+        assert!(
+            kinds.contains(&&ChunkKind::Impl),
+            "missing Impl: {chunks:?}"
+        );
         assert!(names.contains(&"Config"));
         assert!(names.contains(&"main"));
         assert!(names.contains(&"new"));
@@ -426,7 +443,10 @@ type Reader interface {
 }
 "#;
         let chunks = chunk_source(src, Language::Go).unwrap();
-        let r = chunks.iter().find(|c| c.symbol == "Reader").expect("Reader missing");
+        let r = chunks
+            .iter()
+            .find(|c| c.symbol == "Reader")
+            .expect("Reader missing");
         assert_eq!(r.kind, ChunkKind::Class);
     }
 

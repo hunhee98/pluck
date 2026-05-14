@@ -14,7 +14,7 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13 # Intel runner
           - target: aarch64-apple-darwin
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
@@ -27,25 +27,37 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release --target ${{ matrix.target }} --bins
+
+      # Cross-compile to aarch64 Linux needs a cross-linker on x86 hosts.
+      - name: Install aarch64 cross-toolchain (Linux only)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "[target.aarch64-unknown-linux-gnu]" >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+
+      - name: Build pluck + pluckd
+        run: cargo build --release --target ${{ matrix.target }} --bins -p pluck-cli -p pluck-mcp
+
       - name: Package
         run: |
           mkdir -p dist
-          tar -C target/${{ matrix.target }}/release -czf \
-            dist/pluck-${{ matrix.target }}.tar.gz pluck pluckd
+          tar -C target/${{ matrix.target }}/release \
+              -czf dist/pluck-${{ matrix.target }}.tar.gz \
+              pluck pluckd
+
       - uses: actions/upload-artifact@v4
         with:
           name: pluck-${{ matrix.target }}
           path: dist/
 
-  publish:
-    name: publish to crates.io + GitHub Releases
+  github_release:
+    name: GitHub Release
     needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v4
         with:
           path: dist/
@@ -53,10 +65,25 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/**/*.tar.gz
-      - name: Publish crates
+          generate_release_notes: true
+
+  crates_io:
+    name: publish crates.io
+    needs: github_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Publish (ordered, with index-propagation sleeps)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
           cargo publish -p pluck-core
+          # crates.io needs a moment to index the parent before dependents
+          # can find it. 20s has been reliable for similar workspaces.
+          sleep 20
           cargo publish -p pluck-mcp
+          sleep 20
           cargo publish -p pluck-cli

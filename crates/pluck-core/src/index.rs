@@ -101,11 +101,7 @@ impl PluckIndex {
     /// applied to the symbol field. Returns every chunk whose symbol
     /// matches; an optional `path_contains` filter narrows ambiguous
     /// matches (e.g. when two files both define `handleLogin`).
-    pub fn lookup_symbol(
-        &self,
-        name: &str,
-        path_contains: Option<&str>,
-    ) -> Result<Vec<SearchHit>> {
+    pub fn lookup_symbol(&self, name: &str, path_contains: Option<&str>) -> Result<Vec<SearchHit>> {
         use tantivy::collector::TopDocs;
         use tantivy::query::QueryParser;
 
@@ -127,9 +123,7 @@ impl PluckIndex {
             // Require exact symbol equality (case-insensitive) — the BM25
             // path may surface near-matches we don't want here.
             if hit.symbol.eq_ignore_ascii_case(name)
-                && path_contains
-                    .map(|p| hit.path.contains(p))
-                    .unwrap_or(true)
+                && path_contains.map(|p| hit.path.contains(p)).unwrap_or(true)
             {
                 hits.push(hit);
             }
@@ -150,17 +144,18 @@ impl PluckIndex {
         let searcher = reader.searcher();
         let qp = QueryParser::for_index(
             &self.inner,
-            vec![self.fields.symbol, self.fields.signature, self.fields.content],
+            vec![
+                self.fields.symbol,
+                self.fields.signature,
+                self.fields.content,
+            ],
         );
         let query = qp.parse_query(query_str).context("parse query")?;
         let top = searcher
             .search(&query, &TopDocs::with_limit(k).order_by_score())
             .context("search")?;
 
-        let threshold = top
-            .first()
-            .map(|(s, _)| s * cutoff_frac)
-            .unwrap_or(0.0);
+        let threshold = top.first().map(|(s, _)| s * cutoff_frac).unwrap_or(0.0);
 
         let mut hits = Vec::with_capacity(top.len());
         for (score, addr) in top {
@@ -345,7 +340,9 @@ function unrelated(): number {
             ));
         }
         let idx = index_one_file(&src, "p.ts", Language::TypeScript);
-        let hits = idx.search("keyword_3 OR keyword_7 OR keyword_11", 3).unwrap();
+        let hits = idx
+            .search("keyword_3 OR keyword_7 OR keyword_11", 3)
+            .unwrap();
         assert!(hits.len() <= 3);
         assert!(!hits.is_empty());
     }

@@ -174,14 +174,17 @@ mod tests {
         }
         w.commit().unwrap();
 
-        let _watcher = spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE)
-            .expect("spawn watcher");
+        let _watcher =
+            spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE).expect("spawn watcher");
 
         // Brief grace so notify has registered the watch before we
         // generate the change event.
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        write(&file, "function alpha() { return 2; }\nfunction beta() {}\n");
+        write(
+            &file,
+            "function alpha() { return 2; }\nfunction beta() {}\n",
+        );
 
         let saw_beta = wait_until(
             || {
@@ -205,11 +208,9 @@ mod tests {
 
         let idx = Arc::new(PluckIndex::in_ram().unwrap());
         let mut w = idx.writer().unwrap();
-        let chunks = crate::chunker::chunk_source(
-            "function doomed() { return 1; }\n",
-            Language::TypeScript,
-        )
-        .unwrap();
+        let chunks =
+            crate::chunker::chunk_source("function doomed() { return 1; }\n", Language::TypeScript)
+                .unwrap();
         for c in &chunks {
             w.add_chunk("doomed.ts", c).unwrap();
         }
@@ -220,8 +221,8 @@ mod tests {
             .iter()
             .any(|h| h.symbol == "doomed"));
 
-        let _watcher = spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE)
-            .expect("spawn watcher");
+        let _watcher =
+            spawn_watcher(repo.clone(), Arc::clone(&idx), DEFAULT_DEBOUNCE).expect("spawn watcher");
         tokio::time::sleep(Duration::from_millis(100)).await;
 
         std::fs::remove_file(&file).unwrap();
@@ -235,7 +236,10 @@ mod tests {
             8000,
         )
         .await;
-        assert!(gone, "watcher should have dropped chunks for the deleted file");
+        assert!(
+            gone,
+            "watcher should have dropped chunks for the deleted file"
+        );
 
         cleanup(&repo);
     }

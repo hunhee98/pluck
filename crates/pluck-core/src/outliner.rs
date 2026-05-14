@@ -103,7 +103,11 @@ fn count_lines(src: &str) -> u32 {
         return 0;
     }
     let nl = src.bytes().filter(|&b| b == b'\n').count() as u32;
-    if src.ends_with('\n') { nl } else { nl + 1 }
+    if src.ends_with('\n') {
+        nl
+    } else {
+        nl + 1
+    }
 }
 
 /// Render an outline as the byte-stream returned to the agent.

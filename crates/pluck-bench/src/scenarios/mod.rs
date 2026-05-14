@@ -12,6 +12,10 @@ pub mod auth_token_expiry;
 
 pub struct Scenario {
     pub name: &'static str,
+    /// Stored for Phase 4 — once the runners are LLM-driven this is the
+    /// prompt sent to the agent. The Phase 0 deterministic runners ignore
+    /// it.
+    #[allow(dead_code)]
     pub task_prompt: &'static str,
     pub repo: Vec<(String, String)>,
     pub bug_marker: &'static str,
@@ -21,9 +25,7 @@ pub struct Scenario {
 
 pub fn load(name: &str) -> Option<Scenario> {
     match name {
-        "fix-auth-token-expiry" | "fix/auth-token-expiry" => {
-            Some(auth_token_expiry::scenario())
-        }
+        "fix-auth-token-expiry" | "fix/auth-token-expiry" => Some(auth_token_expiry::scenario()),
         _ => None,
     }
 }
