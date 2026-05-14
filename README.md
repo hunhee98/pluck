@@ -42,37 +42,35 @@ No server. No LLM in the loop. No internet. Single binary.
 
 **Capability guarantee:** every tool has a `--raw` mode that matches `cat`/`grep` byte-for-byte. No loss of agent capability.
 
-## Why pluck (vs `a prior-art code search tool`, the closest prior art)
+## Why pluck
 
-`a prior-art code search tool`  already covers most of the
-indexing stack pluck needs: tree-sitter chunking, BM25, `potion-code-16M`
-embeddings, RRF fusion, 12% noise cutoff, Unicode tokenizer. Token-savings
-numbers are in the same ballpark when measured the same way. pluck's bet is
-that the **agent-facing layer** is what's missing.
+pluck's bet is that the **agent-facing layer** is what's been missing from
+code search for AI agents — not the indexing algorithm.
 
-| Capability | `cat` + `grep` | a prior-art code search tool | **pluck** |
-|------------|----------------|-----------|-----------|
-| Hybrid BM25 + semantic | ✗ | ✓ | ✓ (Phase 2) |
-| AST-level chunks | ✗ | ✓ (8 langs) | ✓ (5 langs, Phase 0) |
-| Unicode / Korean tokenizer | ✗ | ✓ | ✓ (Phase 2) |
-| 12% noise cutoff | — | ✓ | ✓ |
-| **Persistent daemon (MCP stdio)** | — | ✗ (cold CLI per call) | **✓** |
-| **Persistent index (mmap)** | — | ✗ (re-indexes every run) | **✓** (Phase 0/1) |
-| **Incremental reindex (`notify`)** | — | ✗ | **✓** |
+| Capability | `cat` + `grep` / `rg` | Other code-search tools | **pluck** |
+|------------|----------------------|-------------------------|-----------|
+| Hybrid BM25 + semantic ranking | ✗ | typically ✓ | ✓ (Phase 2) |
+| AST-level chunks | ✗ | typically ✓ | ✓ |
+| Persistent daemon (MCP stdio) | — | ✗ (cold CLI per call) | **✓** |
+| Persistent index (mmap) | — | usually ✗ | **✓** |
+| Incremental reindex (file watcher) | — | usually ✗ | **✓** |
 | **Session-scoped dedup** | — | ✗ | **✓** |
 | **`--raw` cat/grep byte parity** | — | ✗ | **✓** |
-| **`peek` (signature + callees)** | ✗ | partial (`--outline`) | **✓** |
-| **Single-file outline (`pluck.read`)** | ✗ | ✗ (search-result only) | **✓** |
-| **Multi-hop `expand`** | ✗ | partial (`deps`/`impact`) | **✓** |
-| Dependency / impact graph | ✗ | ✓ | planned (Phase 4) |
+| **Lossless default, lossy opt-in** | — | varies | **✓** |
+| `peek` (signature + direct callees) | ✗ | ✗ | **✓** |
+| Single-file outline (`pluck.read`) | ✗ | ✗ | **✓** |
+| Multi-hop `expand` (call graph) | ✗ | ✗ | **✓** |
 
-Where pluck ties or trails today: indexing algorithm, language coverage,
-dep-graph maturity. Where pluck leads, or plans to: **state preservation
-across calls (daemon, persistent index, watcher, session dedup), agent-tool
-diversity (peek, expand, single-file outline), and the `--raw` safety net
-that lets the agent fall back to byte-equivalent cat/grep when the index is
-wrong or stale.** The headline token savings (~85–90% vs grep+cat) are the
-floor for both tools; the differentiator is what happens between calls.
+The principle that drives the surface design: **savings must come from
+removing structural waste, never from omitting information the agent might
+need.** Re-reading the same chunk in one session, scrolling past unrelated
+functions to reach the one that matters, re-paying tokens for the same
+imports / headers on every read — that's the redundancy pluck targets.
+Stripping comments, dropping types, returning only matched lines without
+their surrounding function — that's information loss the agent pays for
+later in extra round-trips or wrong decisions. pluck defaults to the
+lossless modes and makes any lossy mode (peek, match-lines-only) an
+explicit opt-in the agent has to choose.
 
 ## Benchmarks
 
@@ -90,25 +88,25 @@ _Numbers above are projection targets validated against the harness in `crates/p
 
 ### Token savings — `pluck.search` vs `rg` / `cat`
 
-Measured against a synthetic 92-file TypeScript repo (12 subject-matter files +
-80 noise modules that mention query keywords incidentally — the shape of a
-real codebase). `cargo bench --bench search`. Repo size: 32,756 cat-tokens
-total. Renderings: `--full` keeps the chunk body; `--compact` keeps only the
-score, path, range, and matching lines (the apples-to-apples comparison with
-a prior-art code search tool's headline `-93%` claim).
+Measured against a synthetic 92-file TypeScript repo: 12 subject-matter
+files plus 80 noise modules that mention query keywords incidentally — the
+shape of a real codebase. `cargo bench --bench search`. Repo size: 32,756
+`cat`-tokens total. The `--full` rendering preserves chunk bodies (the
+lossless default); `--compact` is an opt-in mode that keeps only the score,
+path, range, and matching lines — useful for pure discovery but lossy for
+editing tasks.
 
 | Query | `rg` lines | `rg + cat matched files` | pluck `--full` | pluck `--compact` | save vs cat | save vs rg |
 |-------|----------:|-------------------------:|---------------:|------------------:|------------:|-----------:|
-| session expiry refresh | 3,273 | 6,859 | 900 | **622** | 91% | 81% |
-| password verification  | 2,034 | 4,402 | 1,029 | **559** | 87% | 73% |
-| refund window          | 1,085 | 2,186 | 1,000 | **430** | 80% | 60% |
-| subscription billing   | 1,052 | 2,189 | 987 | **465** | 79% | 56% |
-| auth middleware        | 2,728 | 6,194 | 1,013 | **443** | 93% | 84% |
+| session expiry refresh | 3,273 | 6,859 | 900 | 622 | 91% | 81% |
+| password verification  | 2,034 | 4,402 | 1,029 | 559 | 87% | 73% |
+| refund window          | 1,085 | 2,186 | 1,000 | 430 | 80% | 60% |
+| subscription billing   | 1,052 | 2,189 | 987 | 465 | 79% | 56% |
+| auth middleware        | 2,728 | 6,194 | 1,013 | 443 | 93% | 84% |
 
-Average: **86% vs `grep + cat matched files`**, **71% vs raw `rg` lines**.
-Comparable to a prior-art code search tool's 93% (BM25 + embeddings); pluck's number here is
-BM25-only — adding the `potion-code-16M` semantic stage (Phase 2) should
-narrow that gap further.
+Average: **86% vs `grep + cat matched files`**, **71% vs raw `rg` lines**,
+with the `--compact` mode. BM25-only today; semantic ranking (Phase 2) will
+improve precision on natural-language queries.
 
 ### Token savings — `pluck.read` outline vs `cat`
 

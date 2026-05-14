@@ -23,3 +23,6 @@ Cargo.lock.bak
 
 # Logs
 *.log
+
+# Internal-only notes (competitor analysis, drafts, etc.) — never published.
+/docs/internal/
