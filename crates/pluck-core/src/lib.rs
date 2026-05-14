@@ -4,6 +4,7 @@
 //! reindex for the pluck daemon and CLI.
 
 pub mod chunker;
+pub mod outliner;
 pub mod bm25;
 pub mod semantic;
 pub mod fusion;

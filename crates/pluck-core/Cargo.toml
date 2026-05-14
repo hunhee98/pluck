@@ -26,7 +26,12 @@ tokio.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+tiktoken-rs.workspace = true
 
 [[bench]]
 name = "chunker"
+harness = false
+
+[[bench]]
+name = "tokens"
 harness = false

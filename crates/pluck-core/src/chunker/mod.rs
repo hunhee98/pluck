@@ -81,7 +81,15 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
 
         // 1 copy of the source slice into owned content
         let content = src[start_byte..end_byte].to_string();
-        let signature = content.lines().next().unwrap_or("").trim_end().to_string();
+
+        // signature = node text up to the `body` field's start (if present),
+        // so multi-line parameter lists are captured intact. Falls back to
+        // first line for nodes without a body field (e.g. type aliases).
+        let signature = match node.child_by_field_name("body") {
+            Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
+            None => content.lines().next().unwrap_or("").trim_end().to_string(),
+        };
+
         let symbol = src[nr].to_string();
 
         chunks.push(Chunk {

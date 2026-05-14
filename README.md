@@ -72,7 +72,24 @@ _Numbers above are projection targets validated against the harness in `crates/p
 
 ## Performance
 
-AST chunker microbenchmarks (TypeScript, M-series Mac, `cargo bench --bench chunker`):
+### Token savings (`pluck.read` outline vs `cat`)
+
+Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench tokens`.
+
+| Scenario | Lines | `cat` tokens | `pluck.read` tokens | Savings |
+|----------|------:|-------------:|--------------------:|--------:|
+| Tiny (raw mode pass-through) | 10 | 60 | 60 | 0% (raw) |
+| Medium realistic — 5 handlers | 119 | 929 | 116 | **88%** |
+| Large realistic — 25 handlers | 579 | 4,549 | 556 | **88%** |
+| XL realistic — 100 handlers | 2,304 | 18,124 | 2,320 | **87%** |
+| Class with 10 methods | 173 | 1,768 | 277 | **84%** |
+| Class with 50 methods | 813 | 8,608 | 1,277 | **85%** |
+
+Files ≤ 100 lines fall through to raw mode automatically (no win in outlining a tiny file). Above that, the outline is signature-only; the agent fetches bodies on demand via `pluck.symbol(name)` or `pluck.read(lines: …)`.
+
+### AST chunker latency
+
+`cargo bench --bench chunker` (TypeScript, M-series Mac):
 
 | Workload | Source size | Time | Throughput |
 |----------|-------------|------|-----------|
@@ -80,7 +97,7 @@ AST chunker microbenchmarks (TypeScript, M-series Mac, `cargo bench --bench chun
 | Medium | 500 lines, 100 fns  | **4.24 ms** | ~118 KLOC/s |
 | Large  | 5000 lines, 1000 fns | **18.59 ms** | ~269 KLOC/s |
 
-Reported as median of 100 samples (Criterion). Most of the small-workload cost is the one-time `Query` compilation; future work will cache parser+query per language for sub-ms repeated calls.
+Median of 100 samples (Criterion). Most of the small-workload cost is one-time `Query` compilation; caching parser+query per language will bring sub-ms steady-state cost.
 
 ## Architecture
 
