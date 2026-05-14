@@ -65,6 +65,14 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
             continue;
         };
 
+        // Python: a function/class_definition nested directly under a
+        // decorated_definition is already covered by the outer match.
+        if let Some(parent) = node.parent() {
+            if parent.kind() == "decorated_definition" {
+                continue;
+            }
+        }
+
         let start_byte = node.start_byte();
         if !seen.insert(start_byte) {
             continue;
@@ -276,5 +284,166 @@ enum Direction {
         assert_eq!(chunks.len(), 1);
         let c = &chunks[0];
         assert_eq!(&src[c.start_byte as usize..c.end_byte as usize], c.content);
+    }
+
+    // ── Rust ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_rust_function_struct_impl() {
+        let src = r#"
+pub struct Config {
+    pub name: String,
+}
+
+fn main() {
+    println!("hello");
+}
+
+impl Config {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+"#;
+        let chunks = chunk_source(src, Language::Rust).unwrap();
+        let kinds: Vec<&ChunkKind> = chunks.iter().map(|c| &c.kind).collect();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(kinds.contains(&&ChunkKind::Struct), "missing Struct: {chunks:?}");
+        assert!(kinds.contains(&&ChunkKind::Impl), "missing Impl: {chunks:?}");
+        assert!(names.contains(&"Config"));
+        assert!(names.contains(&"main"));
+        assert!(names.contains(&"new"));
+    }
+
+    #[test]
+    fn test_rust_trait_and_enum() {
+        let src = r#"
+pub trait Greeter {
+    fn greet(&self) -> String;
+}
+
+pub enum Status {
+    Ok,
+    Err(String),
+}
+"#;
+        let chunks = chunk_source(src, Language::Rust).unwrap();
+        let by_kind = |k: ChunkKind| {
+            chunks
+                .iter()
+                .find(|c| c.kind == k)
+                .cloned()
+                .unwrap_or_else(|| panic!("no chunk of kind {k:?}"))
+        };
+        assert_eq!(by_kind(ChunkKind::Trait).symbol, "Greeter");
+        assert_eq!(by_kind(ChunkKind::Enum).symbol, "Status");
+    }
+
+    // ── Python ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_python_function_and_class() {
+        let src = r#"
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+
+class AuthService:
+    def __init__(self, secret: str):
+        self.secret = secret
+
+    async def login(self, user: str) -> bool:
+        return len(user) > 0
+"#;
+        let chunks = chunk_source(src, Language::Python).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"greet"));
+        assert!(names.contains(&"AuthService"));
+        assert!(names.contains(&"__init__"));
+        assert!(names.contains(&"login"));
+    }
+
+    #[test]
+    fn test_python_decorated_function() {
+        let src = r#"
+@app.route("/")
+def index():
+    return "hi"
+"#;
+        let chunks = chunk_source(src, Language::Python).unwrap();
+        // expect exactly one chunk for `index` (decorated, deduped by start_byte)
+        let fns: Vec<_> = chunks.iter().filter(|c| c.symbol == "index").collect();
+        assert_eq!(fns.len(), 1, "expected one index chunk, got: {chunks:?}");
+        // chunk should start at the decorator line (line 2)
+        assert_eq!(fns[0].start_line, 2);
+    }
+
+    // ── Go ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_go_function_method_struct() {
+        let src = r#"
+package main
+
+type Server struct {
+    addr string
+}
+
+func NewServer(addr string) *Server {
+    return &Server{addr: addr}
+}
+
+func (s *Server) Run() error {
+    return nil
+}
+"#;
+        let chunks = chunk_source(src, Language::Go).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"Server"), "missing Server struct");
+        assert!(names.contains(&"NewServer"));
+        assert!(names.contains(&"Run"));
+        let server = chunks.iter().find(|c| c.symbol == "Server").unwrap();
+        assert_eq!(server.kind, ChunkKind::Struct);
+        let run = chunks.iter().find(|c| c.symbol == "Run").unwrap();
+        assert_eq!(run.kind, ChunkKind::Method);
+    }
+
+    #[test]
+    fn test_go_interface() {
+        let src = r#"
+package main
+
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+"#;
+        let chunks = chunk_source(src, Language::Go).unwrap();
+        let r = chunks.iter().find(|c| c.symbol == "Reader").expect("Reader missing");
+        assert_eq!(r.kind, ChunkKind::Class);
+    }
+
+    // ── JavaScript ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_js_function_class_arrow() {
+        let src = r#"
+function add(a, b) {
+  return a + b;
+}
+
+class Counter {
+  constructor() { this.n = 0; }
+  inc() { this.n++; }
+}
+
+const square = (x) => x * x;
+"#;
+        let chunks = chunk_source(src, Language::JavaScript).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"add"));
+        assert!(names.contains(&"Counter"));
+        assert!(names.contains(&"constructor"));
+        assert!(names.contains(&"inc"));
+        assert!(names.contains(&"square"));
     }
 }

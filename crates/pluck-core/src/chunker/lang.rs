@@ -15,7 +15,7 @@ impl Lang {
             "ts" | "tsx" => Some(Self::TypeScript),
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
             "rs" => Some(Self::Rust),
-            "py" => Some(Self::Python),
+            "py" | "pyi" => Some(Self::Python),
             "go" => Some(Self::Go),
             _ => None,
         }
@@ -23,9 +23,8 @@ impl Lang {
 
     pub fn ts_language(self) -> Language {
         match self {
-            Self::TypeScript | Self::JavaScript => {
-                tree_sitter_typescript::language_typescript()
-            }
+            Self::TypeScript => tree_sitter_typescript::language_typescript(),
+            Self::JavaScript => tree_sitter_javascript::language(),
             Self::Rust => tree_sitter_rust::language(),
             Self::Python => tree_sitter_python::language(),
             Self::Go => tree_sitter_go::language(),
@@ -34,10 +33,11 @@ impl Lang {
 
     pub fn query_str(self) -> &'static str {
         match self {
-            Self::TypeScript | Self::JavaScript => {
-                include_str!("queries/typescript.scm")
-            }
-            _ => "",
+            Self::TypeScript => include_str!("queries/typescript.scm"),
+            Self::JavaScript => include_str!("queries/javascript.scm"),
+            Self::Rust => include_str!("queries/rust.scm"),
+            Self::Python => include_str!("queries/python.scm"),
+            Self::Go => include_str!("queries/go.scm"),
         }
     }
 }
