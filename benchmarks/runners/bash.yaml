@@ -1,0 +1,10 @@
+name: bash
+agent: claude-code
+model: claude-sonnet-4-6
+mcp_servers: {}
+tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+prompt_suffix: ""

@@ -1,0 +1,22 @@
+[package]
+name = "pluck-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reproducible benchmark harness for pluck vs cat/grep/prior-art tools"
+
+[[bin]]
+name = "pluck-bench"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tiktoken-rs.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

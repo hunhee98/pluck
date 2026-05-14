@@ -1,0 +1,3 @@
+//! index — skeleton.
+//!
+//! TODO: implement.

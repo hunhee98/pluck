@@ -1,0 +1,3 @@
+//! fusion — skeleton.
+//!
+//! TODO: implement.

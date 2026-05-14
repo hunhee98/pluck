@@ -1,0 +1,25 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ONNX models (downloaded by bootstrap)
+/models/*.onnx
+/models/*.bin
+
+# Benchmark artifacts
+/benchmarks/results/*.json
+/benchmarks/repos/*/
+
+# Local index store
+/.pluck/
+
+# Logs
+*.log

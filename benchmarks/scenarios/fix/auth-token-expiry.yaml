@@ -1,0 +1,39 @@
+id: fix-auth-token-expiry
+category: fix
+description: |
+  Fix login token expiry check that uses `<` instead of `<=`. Tokens that
+  expire exactly at the current timestamp are incorrectly accepted.
+
+repo: express-sample
+repo_revision: a3f2c1d
+
+seed_context: |
+  Small Express.js sample with JWT-based auth. Single-file bug. No prior
+  conversation context.
+
+prompt: |
+  There is a bug in our login flow: tokens that expire exactly at the
+  current timestamp are being accepted. They should be rejected.
+  Find the bug and fix it.
+
+success_criteria:
+  files_changed:
+    must_include:
+      - src/auth/token.js
+    must_not_include:
+      - package.json
+      - node_modules/**
+  diff_must_contain:
+    - "<="
+  tests_pass: true
+  llm_judge: |
+    Did the agent correctly identify and fix the off-by-one token expiry
+    bug (replacing `<` with `<=` in the expiry comparison) without
+    introducing other unrelated changes?
+
+budget:
+  max_tool_calls: 30
+  max_input_tokens: 100000
+  max_wall_time_sec: 120
+
+repetitions: 5

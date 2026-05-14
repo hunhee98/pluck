@@ -1,0 +1,17 @@
+name: pluck
+agent: claude-code
+model: claude-sonnet-4-6
+mcp_servers:
+  pluck:
+    command: pluckd
+    args: ["--stdio", "--repo", "{{repo_path}}"]
+tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+  - mcp__pluck__*
+prompt_suffix: |
+  Prefer mcp__pluck__* tools over Bash cat/grep/rg for any file in the repo.
+  Use Bash only when piping to other shell tools or working outside the
+  indexed repo.

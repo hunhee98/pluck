@@ -1,0 +1,26 @@
+id: explore-payment-flow
+category: explore
+description: |
+  Summarize how the payment flow works end to end across the codebase.
+
+repo: k8s-subset
+repo_revision: HEAD
+
+prompt: |
+  Walk me through how the payment flow works in this codebase, from the
+  HTTP request to the database write. List the involved files and the key
+  functions in order.
+
+success_criteria:
+  no_edits_required: true
+  llm_judge: |
+    Did the agent produce an accurate ordered walk-through covering at
+    minimum: HTTP handler, validation, payment provider call, persistence?
+    Bonus: error paths, idempotency keys.
+
+budget:
+  max_tool_calls: 25
+  max_input_tokens: 100000
+  max_wall_time_sec: 180
+
+repetitions: 5

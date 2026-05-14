@@ -1,0 +1,65 @@
+[workspace]
+members = [
+  "crates/pluck-core",
+  "crates/pluck-mcp",
+  "crates/pluck-cli",
+  "crates/pluck-bench",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/hunhee98/pluck"
+homepage = "https://github.com/hunhee98/pluck"
+readme = "README.md"
+
+[workspace.dependencies]
+# AST / parsing
+tree-sitter = "0.22"
+tree-sitter-rust = "0.21"
+tree-sitter-typescript = "0.21"
+tree-sitter-javascript = "0.21"
+tree-sitter-python = "0.21"
+tree-sitter-go = "0.21"
+
+# Search / index
+tantivy = "0.26"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Semantic
+ort = "2.0.0-rc.12"
+ndarray = "0.15"
+
+# MCP
+rmcp = "1.7"
+
+# Runtime
+tokio = { version = "1", features = ["full"] }
+
+# Watcher
+notify = "6.1"
+
+# Tokenization for measurement
+tiktoken-rs = "0.5"
+
+# Utils
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 1

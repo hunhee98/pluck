@@ -1,0 +1,70 @@
+name: Benchmark
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"   # weekly Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: "Comma-separated scenario IDs (default: all)"
+        required: false
+        default: "all"
+
+jobs:
+  bench:
+    name: bench (${{ matrix.scenario }} × ${{ matrix.runner }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - search/find-auth
+          - fix/auth-token-expiry
+          - refactor/add-user-field
+          - explore/payment-flow
+          - review/pr-diff
+        runner: [bash, ripgrep, a prior-art code search tool, , pluck]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bootstrap
+        run: ./scripts/bootstrap.sh
+
+      - name: Install competitor MCPs
+        run: ./scripts/install-competitors.sh
+
+      - name: Run scenario
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cargo run --release --bin pluck-bench -- run \
+            --scenario benchmarks/scenarios/${{ matrix.scenario }}.yaml \
+            --runner benchmarks/runners/${{ matrix.runner }}.yaml \
+            --repetitions 5 \
+            --output benchmarks/results/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.scenario }}-${{ matrix.runner }}
+          path: benchmarks/results/
+
+  report:
+    name: aggregate + publish dashboard
+    needs: bench
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: benchmarks/results/
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo run --release --bin pluck-bench -- report --markdown
+      - name: Deploy dashboard
+        run: ./scripts/publish-dashboard.sh

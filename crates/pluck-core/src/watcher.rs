@@ -1,0 +1,3 @@
+//! watcher — skeleton.
+//!
+//! TODO: implement.

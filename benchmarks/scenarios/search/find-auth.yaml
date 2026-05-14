@@ -1,0 +1,26 @@
+id: search-find-auth
+category: search
+description: |
+  Locate authentication-related code from a high-level description, without
+  knowing the exact symbol or file name.
+
+repo: nextjs-app
+repo_revision: HEAD
+
+prompt: |
+  Where in this codebase is user authentication handled? Point me to the
+  primary files and entry points.
+
+success_criteria:
+  llm_judge: |
+    Did the agent identify the auth module(s) and at least the primary
+    login/session handler with file paths and line numbers? Bonus if it
+    captured both server and middleware sides.
+  no_edits_required: true
+
+budget:
+  max_tool_calls: 15
+  max_input_tokens: 50000
+  max_wall_time_sec: 60
+
+repetitions: 5

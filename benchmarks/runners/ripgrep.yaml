@@ -1,0 +1,11 @@
+name: ripgrep
+agent: claude-code
+model: claude-sonnet-4-6
+mcp_servers: {}
+tools:
+  - Read
+  - Write
+  - Edit
+  - Bash
+prompt_suffix: |
+  ripgrep (`rg`) is available on PATH. Prefer `rg` over `grep` for speed.

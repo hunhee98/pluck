@@ -1,0 +1,27 @@
+id: review-pr-diff
+category: review
+description: |
+  Review a real PR diff against the repo and list correctness, security,
+  and style issues.
+
+repo: nextjs-app
+repo_revision: HEAD
+
+prompt: |
+  Review the diff in `diff.patch` (located at repo root). Identify any
+  correctness, security, or style issues. For each issue, cite the
+  file:line and explain briefly.
+
+success_criteria:
+  no_edits_required: true
+  llm_judge: |
+    Did the agent identify the seeded issues (auth bypass, missing input
+    validation, unhandled promise rejection)? False positives reduce the
+    score; missed issues reduce it more.
+
+budget:
+  max_tool_calls: 30
+  max_input_tokens: 120000
+  max_wall_time_sec: 240
+
+repetitions: 5

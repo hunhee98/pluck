@@ -1,0 +1,32 @@
+# pluck — token-efficient code reading
+
+Prefer `pluck.*` tools over Bash `cat` / `grep` / `rg` for any file inside
+the indexed repo. Every pluck tool has a `--raw` mode if you need byte-exact
+output — capability is never lost, only tokens.
+
+## Tools
+
+- `pluck.read(path)` — file content with smart outline (10x fewer tokens than cat)
+- `pluck.grep(pattern)` — keyword search (wraps ripgrep; all flags work)
+- `pluck.search(query)` — semantic + keyword hybrid (use when you don't know the literal)
+- `pluck.symbol(name)` — read just that function/class (not the whole file)
+- `pluck.peek(name)` — signature + direct callees only
+- `pluck.expand(name, hop)` — symbol + callees up to N hops
+
+## When to fall back to Bash
+
+- File is binary (use `file <path>` first if unsure).
+- You need byte-exact stdout for piping into another shell tool.
+- The target is outside the indexed repo.
+
+## Token math
+
+Examples for an 800-line TypeScript file containing a 40-line function:
+
+| Action | Bash | pluck |
+|--------|------|-------|
+| Understand the file | `cat`  ≈ 6,000 tok | `pluck.read` ≈ 600 tok |
+| Read one function | `cat` + scroll ≈ 6,000 tok | `pluck.symbol` ≈ 300 tok |
+| Just the signature | `cat` + scroll ≈ 6,000 tok | `pluck.peek` ≈ 15 tok |
+
+Use pluck by default. Use Bash for the cases above.

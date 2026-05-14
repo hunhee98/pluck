@@ -1,0 +1,32 @@
+id: refactor-add-user-field
+category: refactor
+description: |
+  Add a nullable `lastLoginAt: Date` field to the User type and propagate
+  the change across the codebase (DTOs, serializers, callers).
+
+repo: nextjs-app
+repo_revision: HEAD
+
+prompt: |
+  Add a `lastLoginAt: Date | null` field to the User domain type. Propagate
+  the change through DTOs, the database schema, the serializer, and any
+  callers that construct User objects. Existing tests should still pass.
+
+success_criteria:
+  files_changed:
+    must_include:
+      - src/types/user.ts
+      - src/db/schema.sql
+  diff_must_contain:
+    - "lastLoginAt"
+  tests_pass: true
+  llm_judge: |
+    Did the agent propagate the field consistently across types, DTOs,
+    schema, and constructors without breaking any unrelated module?
+
+budget:
+  max_tool_calls: 60
+  max_input_tokens: 200000
+  max_wall_time_sec: 300
+
+repetitions: 5

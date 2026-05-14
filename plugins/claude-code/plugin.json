@@ -1,0 +1,28 @@
+{
+  "name": "pluck",
+  "version": "0.1.0",
+  "description": "Token-efficient code reading for Claude Code. Replaces cat/grep with symbol-aware MCP tools.",
+  "homepage": "https://github.com/hunhee98/pluck",
+  "license": "MIT",
+  "mcp_servers": {
+    "pluck": {
+      "command": "pluckd",
+      "args": ["--stdio"]
+    }
+  },
+  "permissions": {
+    "allow": [
+      "mcp__pluck__read",
+      "mcp__pluck__grep",
+      "mcp__pluck__search",
+      "mcp__pluck__symbol",
+      "mcp__pluck__peek",
+      "mcp__pluck__expand"
+    ]
+  },
+  "claude_md_inject": "CLAUDE.md.tmpl",
+  "install_check": {
+    "command": "pluckd",
+    "args": ["--version"]
+  }
+}

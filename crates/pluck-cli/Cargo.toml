@@ -1,0 +1,19 @@
+[package]
+name = "pluck-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "pluck CLI — symbol-aware code reading for terminals and non-MCP envs"
+
+[[bin]]
+name = "pluck"
+path = "src/main.rs"
+
+[dependencies]
+pluck-core = { path = "../pluck-core" }
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true

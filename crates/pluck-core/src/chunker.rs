@@ -1,0 +1,3 @@
+//! chunker — skeleton.
+//!
+//! TODO: implement.
