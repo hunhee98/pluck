@@ -123,6 +123,25 @@ Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench t
 
 Files ≤ 100 lines fall through to raw mode automatically (no win in outlining a tiny file). Above that, the outline is signature-only; the agent fetches bodies on demand via `pluck.symbol(name)` or `pluck.read(lines: …)`.
 
+### End-to-end scenario: `fix-auth-token-expiry`
+
+A 92-file TypeScript fixture with a single seeded bug — `s.expiresAt > now()`
+in `src/auth/session.ts` where the comparison should be `<`. Both workflows
+must surface the buggy line for the run to count as a success. `cargo run
+-p pluck-bench -- run --scenario fix-auth-token-expiry`.
+
+| Workflow | Tool calls | Total tokens | Bug surfaced? |
+|----------|-----------:|-------------:|:-------------:|
+| Bash (`rg -l` → `cat` × 3 → `rg -n` → `cat`)         | 7 | 1,248 | ✅ |
+| Pluck (`pluck.search` → `pluck.read` → `pluck.search`) | 3 | 931   | ✅ |
+
+**25% fewer tokens, 4 fewer tool calls, identical recall.** The seeded
+bug is a deliberate substring (`s.expiresAt > now()`) the verifier checks
+for in each workflow's output — same correctness bar, fewer bytes.
+Phase 4 replaces the hand-written workflows with real LLM tool selection;
+the fixture and the marker stay the same so the comparison stays
+apples-to-apples.
+
 ### Indexer throughput & search latency
 
 `cargo bench --bench indexer` on synthetic TypeScript repos (each file: 1
