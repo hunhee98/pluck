@@ -24,6 +24,7 @@ use pluck_core::chunker::Language;
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
 use pluck_core::outliner::{outline_source, render as render_outline};
+use pluck_core::semantic::{StaticEncoder, DEFAULT_MODEL_ID};
 use pluck_core::watcher::{spawn_watcher, WatcherHandle, DEFAULT_DEBOUNCE};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -49,23 +50,58 @@ struct ServerInner {
 }
 
 impl PluckServer {
-    /// Build a server, indexing `repo_root` on startup. Use this from
-    /// non-async contexts (tests, CLI) — the watcher is *not* attached
-    /// because spawning the tokio task requires a runtime. Use
-    /// [`PluckServer::new_with_watcher`] from within a tokio runtime to
-    /// get incremental reindex.
+    /// Test / CLI constructor. No watcher, no embedding encoder — pure
+    /// BM25, no network or tokio runtime needed. `search_hybrid` still
+    /// works (it degrades to BM25-only when no encoder is attached).
     pub fn new(repo_root: PathBuf) -> Result<Self> {
-        Self::build(repo_root, None)
+        Self::build(repo_root, None, false)
     }
 
-    /// Build a server and attach a notify-based watcher so file changes
-    /// reindex automatically. Must be called from a tokio runtime.
+    /// Production daemon constructor. Loads the embedding encoder (with
+    /// PLUCK_DISABLE_EMBEDDINGS=1 escape hatch) and starts the notify
+    /// watcher. Must be called inside a tokio runtime.
     pub fn new_with_watcher(repo_root: PathBuf) -> Result<Self> {
-        Self::build(repo_root, Some(DEFAULT_DEBOUNCE))
+        Self::build(repo_root, Some(DEFAULT_DEBOUNCE), true)
     }
 
-    fn build(repo_root: PathBuf, debounce: Option<std::time::Duration>) -> Result<Self> {
-        let index = Arc::new(PluckIndex::in_ram()?);
+    fn build(
+        repo_root: PathBuf,
+        debounce: Option<std::time::Duration>,
+        load_encoder: bool,
+    ) -> Result<Self> {
+        // Embedding encoder. Off entirely in test/CLI mode; in daemon
+        // mode the load is opt-out via PLUCK_DISABLE_EMBEDDINGS=1. Load
+        // failure is non-fatal — we log and degrade to BM25-only so
+        // first-run network problems never break pluckd.
+        let encoder: Option<Arc<StaticEncoder>> = if !load_encoder {
+            None
+        } else if std::env::var("PLUCK_DISABLE_EMBEDDINGS").is_ok() {
+            tracing::info!("PLUCK_DISABLE_EMBEDDINGS set; running BM25-only");
+            None
+        } else {
+            match StaticEncoder::load_or_fetch(DEFAULT_MODEL_ID) {
+                Ok(enc) => {
+                    tracing::info!(
+                        model = DEFAULT_MODEL_ID,
+                        dim = enc.dim(),
+                        "embedding encoder loaded; hybrid search active"
+                    );
+                    Some(Arc::new(enc))
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "failed to load embedding model ({e}); running BM25-only"
+                    );
+                    None
+                }
+            }
+        };
+
+        let mut idx = PluckIndex::in_ram()?;
+        if let Some(enc) = encoder.as_ref() {
+            idx = idx.with_encoder(Arc::clone(enc));
+        }
+        let index = Arc::new(idx);
         let stats = index_repo(&index, &repo_root)?;
         tracing::info!(
             files = stats.files_indexed,
@@ -210,10 +246,12 @@ impl PluckServer {
         &self,
         Parameters(p): Parameters<SearchParams>,
     ) -> Result<String, McpError> {
+        // search_hybrid auto-degrades to BM25 when no encoder is
+        // attached, so callers don't need to branch on capability.
         let hits = self
             .inner
             .index
-            .search_with_cutoff(&p.query, p.top_k, 0.12)
+            .search_hybrid(&p.query, p.top_k, 0.12)
             .map_err(|e| McpError::internal_error(format!("search failed: {e}"), None))?;
         if hits.is_empty() {
             return Ok("(no hits)\n".to_string());
