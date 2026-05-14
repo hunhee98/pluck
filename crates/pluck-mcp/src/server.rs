@@ -144,7 +144,7 @@ fn default_hop() -> u8 {
 impl PluckServer {
     #[doc = include_str!("../../../docs/mcp-descriptions/read.md")]
     #[tool(name = "pluck.read")]
-    async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
+    pub async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
         let path = self.resolve_in_repo(&p.path);
         let src = std::fs::read_to_string(&path).map_err(|e| {
             McpError::invalid_params(format!("failed to read {:?}: {e}", p.path), None)
@@ -178,7 +178,7 @@ impl PluckServer {
 
     #[doc = include_str!("../../../docs/mcp-descriptions/search.md")]
     #[tool(name = "pluck.search")]
-    async fn search(&self, Parameters(p): Parameters<SearchParams>) -> Result<String, McpError> {
+    pub async fn search(&self, Parameters(p): Parameters<SearchParams>) -> Result<String, McpError> {
         let hits = self
             .inner
             .index
@@ -187,24 +187,45 @@ impl PluckServer {
         if hits.is_empty() {
             return Ok("(no hits)\n".to_string());
         }
-        // Session dedup hook: mark every chunk id we are about to return.
-        // Full dedup ("already-shown" placeholder) lands in Phase 2 —
-        // tracking the set today means the rollout is purely additive.
-        if let Ok(mut s) = self.inner.session.lock() {
-            for h in &hits {
+
+        // Session dedup — split hits into chunks the agent has already
+        // received this session and chunks it has not. The first set is
+        // emitted as a one-line `[already-shown]` placeholder; the bytes
+        // are already in the agent's context window, repeating them is
+        // pure waste. The second set goes out as a normal full or
+        // compact rendering.
+        let (already_shown, fresh): (Vec<_>, Vec<_>) = {
+            let session = self.inner.session.lock().expect("session mutex");
+            hits.into_iter()
+                .partition(|h| session.was_seen(h.chunk_id))
+        };
+
+        // Mark the fresh chunks before we lose the borrow scope.
+        {
+            let mut s = self.inner.session.lock().expect("session mutex");
+            for h in &fresh {
                 s.mark_seen(h.chunk_id);
             }
         }
-        Ok(if p.compact {
-            render_compact(&hits, &p.query)
+
+        let mut out = String::new();
+        if p.compact {
+            out.push_str(&render_compact(&fresh, &p.query));
         } else {
-            render_full(&hits)
-        })
+            out.push_str(&render_full(&fresh));
+        }
+        for h in &already_shown {
+            out.push_str(&format!(
+                "[already-shown: {}:L{}-{} {} score={:.4}]\n",
+                h.path, h.start_line, h.end_line, h.symbol, h.score
+            ));
+        }
+        Ok(out)
     }
 
     #[doc = include_str!("../../../docs/mcp-descriptions/grep.md")]
     #[tool(name = "pluck.grep")]
-    async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
+    pub async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
         let mut cmd = Shell::new("rg");
         cmd.arg(&p.pattern);
         for a in &p.args {
@@ -355,5 +376,71 @@ mod tests {
             }))
             .await;
         assert!(res.is_ok());
+    }
+
+    #[tokio::test]
+    async fn session_dedup_replaces_repeat_results_with_placeholder() {
+        // Same query twice. First call returns chunk bodies; second call
+        // returns the same chunks as `[already-shown]` placeholders — same
+        // metadata, none of the body bytes.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let first = server
+            .search(Parameters(SearchParams {
+                query: "chunk source".into(),
+                top_k: 5,
+                compact: false,
+            }))
+            .await
+            .expect("first search");
+        let second = server
+            .search(Parameters(SearchParams {
+                query: "chunk source".into(),
+                top_k: 5,
+                compact: false,
+            }))
+            .await
+            .expect("second search");
+
+        // Second call must shrink dramatically. We don't pin a hard ratio
+        // because content/scoring can shift, but the second response must
+        // contain only placeholder lines and zero body content.
+        assert!(
+            second.len() < first.len() / 4,
+            "second call should be < 25% of first; got first={} second={}",
+            first.len(),
+            second.len()
+        );
+        // Every line in `second` must be either blank or a placeholder.
+        for line in second.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            assert!(
+                line.starts_with("[already-shown:"),
+                "non-placeholder line on repeat: {line:?}"
+            );
+        }
+        // Same chunks → recall preserved (placeholder must reference each
+        // file path the first call returned).
+        for line in first.lines() {
+            // First-call lines look like "<score>  <path>:L<a>-<b>  ..."
+            if let Some(path_seg) = line.split("  ").nth(1) {
+                if let Some(path) = path_seg.split(':').next() {
+                    if !path.is_empty() && path.contains('/') {
+                        assert!(
+                            second.contains(path),
+                            "path {path:?} from first call missing on repeat:\n{second}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

@@ -1447,6 +1447,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "tiktoken-rs",
  "tokio",
  "tracing",
  "tracing-subscriber",

@@ -123,6 +123,30 @@ Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench t
 
 Files ≤ 100 lines fall through to raw mode automatically (no win in outlining a tiny file). Above that, the outline is signature-only; the agent fetches bodies on demand via `pluck.symbol(name)` or `pluck.read(lines: …)`.
 
+### Session dedup — lossless savings across a multi-call session
+
+The MCP daemon tracks every chunk id it has returned in the current
+session. A chunk surfaced by a later query whose id is already in the
+session set is emitted as a one-line `[already-shown: <path>:L<a>-<b>
+<symbol> score=<s>]` placeholder instead of repeating its body — the
+bytes are already in the agent's context window, repeating them is
+pure waste. `cargo bench -p pluck-mcp --bench session_dedup`.
+
+| # | Query | No-dedup tokens | With-dedup tokens | Savings |
+|--:|-------|----------------:|------------------:|--------:|
+| 1 | `chunk source`                | 1,741 | 1,741 | 0% (first call, nothing to dedup) |
+| 2 | `tree sitter query`           | 2,386 | 1,696 | 29% |
+| 3 | `search index chunk`          | 1,340 | 1,185 | 12% |
+| 4 | `chunk source tree sitter`    | 1,894 |   220 | **88%** |
+| 5 | `BM25 search chunk`           | 1,712 |   248 | **86%** |
+| Σ | session total                 | **9,073** | **5,090** | **44%** |
+
+**Zero information loss.** Every dedup'd chunk keeps its path, line range,
+symbol, and score — only the body bytes the agent already has are elided.
+A CLI-based code-search tool architecturally can't do this: each invocation
+is a fresh process with no memory of prior calls. pluck's persistent
+daemon is what makes this savings shape possible.
+
 ### End-to-end scenario: `fix-auth-token-expiry`
 
 A 92-file TypeScript fixture with a single seeded bug — `s.expiresAt > now()`

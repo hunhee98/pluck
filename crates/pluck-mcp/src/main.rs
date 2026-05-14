@@ -10,10 +10,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rmcp::{transport::io::stdio, ServiceExt};
 
-mod server;
-mod session;
-
-use server::PluckServer;
+use pluck_mcp::server::PluckServer;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "pluck MCP server (stdio)")]

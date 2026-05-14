@@ -10,6 +10,10 @@ description = "MCP server for pluck — exposes pluck.* tools over stdio"
 name = "pluckd"
 path = "src/main.rs"
 
+[lib]
+# Tool descriptions are include_str!'d markdown — they aren't Rust doctests.
+doctest = false
+
 [dependencies]
 pluck-core = { path = "../pluck-core" }
 rmcp = { workspace = true, features = ["server", "macros", "schemars", "transport-io"] }
@@ -21,3 +25,10 @@ anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 clap.workspace = true
+
+[dev-dependencies]
+tiktoken-rs.workspace = true
+
+[[bench]]
+name = "session_dedup"
+harness = false
