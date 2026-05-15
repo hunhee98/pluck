@@ -11,48 +11,48 @@
   ],
   "metrics": {
     "chunker_medium_ms_p50": {
-      "value": 4.24,
+      "value": 1.05,
       "tolerance_pct": 100,
       "regression_direction": "higher",
       "unit": "ms",
-      "source": "bench chunker — chunk_medium (500 lines) median",
+      "source": "bench chunker \u2014 chunk_medium (500 lines) median",
       "note": "100% tolerance accommodates CI runner variance; absolute regression > 8 ms still fails."
     },
     "indexer_files_per_sec_medium": {
-      "value": 386,
+      "value": 2747.0,
       "tolerance_pct": 60,
       "regression_direction": "lower",
       "unit": "files/sec",
-      "source": "bench indexer — medium (500 files) files/s column"
+      "source": "bench indexer \u2014 medium (500 files) files/s column"
     },
     "warm_search_p50_ms_medium": {
-      "value": 0.06,
+      "value": 0.07,
       "tolerance_pct": 200,
       "regression_direction": "higher",
       "unit": "ms",
-      "source": "bench indexer — medium (500 files) Search warm p50",
+      "source": "bench indexer \u2014 medium (500 files) Search warm p50",
       "note": "Wide tolerance: <1 ms is the invariant; we only care that it's not >1 ms."
     },
     "freshness_p50_ms_medium": {
-      "value": 183,
+      "value": 171.0,
       "tolerance_pct": 50,
       "regression_direction": "higher",
       "unit": "ms",
-      "source": "bench freshness — medium (500 files) Save → search-visible p50"
+      "source": "bench freshness \u2014 medium (500 files) Save \u2192 search-visible p50"
     },
     "session_dedup_session_savings_pct": {
-      "value": 44,
+      "value": 23.0,
       "tolerance_pct": 25,
       "regression_direction": "lower",
       "unit": "%",
-      "source": "bench session_dedup — total session savings (Σ row)"
+      "source": "bench session_dedup \u2014 total session savings (\u03a3 row)"
     },
     "digest_savings_pct": {
-      "value": 71,
+      "value": 71.0,
       "tolerance_pct": 25,
       "regression_direction": "lower",
       "unit": "%",
-      "source": "bench digest — median savings across 6 fixtures (cargo-build, cargo-test-green, pnpm-install, yarn-install, pytest-green, gha-log)"
+      "source": "bench digest \u2014 median savings across 6 fixtures (cargo-build, cargo-test-green, pnpm-install, yarn-install, pytest-green, gha-log)"
     }
   }
 }

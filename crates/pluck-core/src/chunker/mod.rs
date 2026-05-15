@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Parser, QueryCursor};
 
 pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -19,10 +19,9 @@ pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
 }
 
 pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
-    let query_src = lang.query_str();
-    if query_src.is_empty() {
+    let Some(query) = lang.compiled_query() else {
         return Ok(Vec::new());
-    }
+    };
 
     let ts_lang = lang.ts_language();
 
@@ -35,15 +34,28 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
         tracing::warn!("parse tree contains errors; extracting available chunks");
     }
 
-    let query = Query::new(&ts_lang, query_src).context("compile query")?;
     let capture_names = query.capture_names();
 
     let mut cursor = QueryCursor::new();
-    let matches = cursor.matches(&query, tree.root_node(), src.as_bytes());
+    let matches = cursor.matches(query, tree.root_node(), src.as_bytes());
 
     let lines: Vec<&str> = src.lines().collect();
 
-    let mut chunks: Vec<Chunk> = Vec::new();
+    // Partial chunk record — callees bucketed in after the single tree walk.
+    struct PartialChunk {
+        symbol: String,
+        kind: ChunkKind,
+        start_line: u32,
+        end_line: u32,
+        start_byte: usize,
+        end_byte: usize,
+        doc_comment: String,
+        content: String,
+        signature: String,
+    }
+
+    let mut partials: Vec<PartialChunk> = Vec::new();
+    let mut all_callees: Vec<(usize, String)> = Vec::new();
     // deduplicate: same start byte can appear when a node matches multiple patterns
     let mut seen: HashSet<usize> = HashSet::new();
 
@@ -51,6 +63,7 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
         let mut def_node: Option<tree_sitter::Node> = None;
         let mut name_range: Option<std::ops::Range<usize>> = None;
         let mut chunk_kind: Option<ChunkKind> = None;
+        let mut callee_node: Option<tree_sitter::Node> = None;
 
         for cap in m.captures {
             let cap_name = capture_names[cap.index as usize];
@@ -59,7 +72,18 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
                 chunk_kind = Some(kind_from_prefix(prefix));
             } else if cap_name.ends_with(".name") {
                 name_range = Some(cap.node.byte_range());
+            } else if cap_name == "callee" {
+                callee_node = Some(cap.node);
             }
+        }
+
+        if let Some(node) = callee_node {
+            let text = src[node.byte_range()].trim();
+            let normalized: String = text.split_whitespace().collect::<Vec<_>>().join("");
+            if !normalized.is_empty() {
+                all_callees.push((node.start_byte(), normalized));
+            }
+            continue;
         }
 
         let (Some(node), Some(nr), Some(kind)) = (def_node, name_range, chunk_kind) else {
@@ -80,32 +104,53 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
         }
         let end_byte = node.end_byte();
 
-        // 1 copy of the source slice into owned content
         let content = src[start_byte..end_byte].to_string();
         let doc_comment = leading_doc_comment(&lines, lang, node.start_position().row, &content);
 
         // signature = node text up to the `body` field's start (if present),
-        // so multi-line parameter lists are captured intact. Falls back to
-        // first line for nodes without a body field (e.g. type aliases).
+        // so multi-line parameter lists are captured intact.
         let signature = match node.child_by_field_name("body") {
             Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
             None => content.lines().next().unwrap_or("").trim_end().to_string(),
         };
 
-        let symbol = src[nr].to_string();
-
-        chunks.push(Chunk {
-            symbol,
+        partials.push(PartialChunk {
+            symbol: src[nr].to_string(),
             kind,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
-            start_byte: start_byte as u32,
-            end_byte: end_byte as u32,
+            start_byte,
+            end_byte,
             doc_comment,
             content,
             signature,
         });
     }
+
+    let chunks = partials
+        .into_iter()
+        .map(|p| {
+            let mut seen: HashSet<&str> = HashSet::new();
+            let mut callees: Vec<String> = Vec::new();
+            for (start, name) in &all_callees {
+                if *start >= p.start_byte && *start < p.end_byte && seen.insert(name.as_str()) {
+                    callees.push(name.clone());
+                }
+            }
+            Chunk {
+                symbol: p.symbol,
+                kind: p.kind,
+                start_line: p.start_line,
+                end_line: p.end_line,
+                start_byte: p.start_byte as u32,
+                end_byte: p.end_byte as u32,
+                doc_comment: p.doc_comment,
+                content: p.content,
+                signature: p.signature,
+                callees,
+            }
+        })
+        .collect();
 
     Ok(chunks)
 }

@@ -23,4 +23,8 @@ pub struct Chunk {
     pub doc_comment: String,
     pub content: String,
     pub signature: String,
+    /// Direct callees extracted during chunking using the already-parsed
+    /// tree. Populated by `chunk_source`; empty for unrecognised languages.
+    #[serde(default)]
+    pub callees: Vec<String>,
 }

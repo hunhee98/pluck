@@ -55,6 +55,11 @@ pub struct PluckIndex {
     /// chunk_id → embedding vector. Populated only when `encoder` is set.
     /// RwLock so reads (search) don't block other reads.
     embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
+    /// Reverse caller index: callee leaf name (lowercased) → Vec of
+    /// chunk_ids whose content calls that callee. Built incrementally
+    /// in `add_chunk`; used by `impact()` for upstream blast-radius
+    /// queries. Shared with `IndexBatch` via `Arc`.
+    callers: Arc<RwLock<HashMap<String, Vec<u64>>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -128,6 +133,7 @@ impl PluckIndex {
             fields,
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
+            callers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -144,6 +150,7 @@ impl PluckIndex {
             fields,
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
+            callers: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -169,6 +176,7 @@ impl PluckIndex {
             next_chunk_id: 0,
             encoder: self.encoder.clone(),
             embeddings: Arc::clone(&self.embeddings),
+            callers: Arc::clone(&self.callers),
         })
     }
 
@@ -405,6 +413,87 @@ impl PluckIndex {
             content: str_field(doc, f.content).unwrap_or_default(),
         })
     }
+
+    /// Look up the chunk_ids of all chunks that contain a call to
+    /// `callee_name` (leaf-matched, case-insensitive). Used by `impact`.
+    pub fn lookup_callers(&self, callee_name: &str) -> Vec<u64> {
+        let leaf = callee_leaf(callee_name).to_lowercase();
+        self.callers
+            .read()
+            .map(|m| m.get(&leaf).cloned().unwrap_or_default())
+            .unwrap_or_default()
+    }
+
+    /// Fetch a single `SearchHit` by its tantivy `chunk_id`. Returns
+    /// `None` if the id is not in the index (e.g. deleted by the
+    /// watcher).
+    pub fn hit_by_chunk_id(&self, chunk_id: u64) -> Result<Option<SearchHit>> {
+        use tantivy::query::TermQuery;
+        let reader = self.inner.reader().context("open reader")?;
+        let searcher = reader.searcher();
+        let term = Term::from_field_u64(self.fields.chunk_id, chunk_id);
+        let q = TermQuery::new(term, IndexRecordOption::Basic);
+        let top = searcher
+            .search(&q, &TopDocs::with_limit(1).order_by_score())
+            .context("chunk_id lookup")?;
+        match top.into_iter().next() {
+            Some((score, addr)) => {
+                let doc: TantivyDocument = searcher.doc(addr).context("doc retrieve")?;
+                Ok(Some(self.doc_to_hit(score, &doc)?))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Reverse call-graph traversal: "who calls `name`, transitively?"
+    ///
+    /// Returns one entry per unique caller chunk, annotated with its
+    /// BFS depth from the target. Test-file callers sort after
+    /// production callers at the same depth. Depth is clamped to 3 to
+    /// prevent output explosion on widely-used utility functions.
+    ///
+    /// Cycle-safe: a visited set prevents any chunk from appearing
+    /// more than once.
+    pub fn impact(&self, name: &str, depth: u8) -> Result<Vec<ImpactHit>> {
+        let depth = depth.clamp(1, 3);
+
+        let mut out: Vec<ImpactHit> = Vec::new();
+        let mut visited: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+        // BFS frontier: (chunk_id, level)
+        let mut frontier: std::collections::VecDeque<(u64, u8)> =
+            std::collections::VecDeque::new();
+
+        for id in self.lookup_callers(name) {
+            if visited.insert(id) {
+                frontier.push_back((id, 1));
+            }
+        }
+
+        while let Some((chunk_id, level)) = frontier.pop_front() {
+            let Some(hit) = self.hit_by_chunk_id(chunk_id)? else {
+                continue;
+            };
+
+            // Enqueue callers of this chunk at level+1 (if within depth).
+            if level < depth {
+                for caller_id in self.lookup_callers(&hit.symbol) {
+                    if visited.insert(caller_id) {
+                        frontier.push_back((caller_id, level + 1));
+                    }
+                }
+            }
+
+            let is_test =
+                hit.path.contains("/test") || hit.path.contains("_test") || hit.path.contains("spec");
+            out.push(ImpactHit { depth: level, is_test, hit });
+        }
+
+        // Sort: production callers first, then test callers; within
+        // each group, ascending depth (closest callers first).
+        out.sort_by_key(|h| (h.is_test as u8, h.depth));
+        Ok(out)
+    }
 }
 
 fn inferred_rrf_alpha(query: &str) -> f32 {
@@ -443,6 +532,8 @@ pub struct IndexBatch {
     next_chunk_id: u64,
     encoder: Option<Arc<StaticEncoder>>,
     embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
+    /// Shared with `PluckIndex::callers` — written here, read by `impact`.
+    callers: Arc<RwLock<HashMap<String, Vec<u64>>>>,
 }
 
 impl IndexBatch {
@@ -462,6 +553,18 @@ impl IndexBatch {
                 self.fields.content => c.content.as_str(),
             ))
             .context("add_document")?;
+
+        // Populate the reverse caller index from pre-extracted callees.
+        // Callees are extracted once during chunking (with the already-parsed
+        // tree) so add_chunk never re-parses source.
+        if !c.callees.is_empty() {
+            if let Ok(mut map) = self.callers.write() {
+                for callee in &c.callees {
+                    let leaf = callee_leaf(callee).to_lowercase();
+                    map.entry(leaf).or_default().push(id);
+                }
+            }
+        }
 
         // If an encoder is attached, embed
         // `doc_comment + symbol + signature + content` so prose API docs
@@ -526,6 +629,31 @@ pub struct SearchHit {
     pub end_line: u32,
     pub signature: String,
     pub content: String,
+}
+
+/// One entry in the result of [`PluckIndex::impact`].
+#[derive(Debug, Clone)]
+pub struct ImpactHit {
+    /// BFS depth from the queried symbol (1 = direct caller).
+    pub depth: u8,
+    /// Whether the caller lives in a test file (path contains `/test`,
+    /// `_test`, or `spec`). Test callers sort after production callers.
+    pub is_test: bool,
+    pub hit: SearchHit,
+}
+
+/// Strip namespace qualifiers from a callee name so it can be matched
+/// against the `symbol` leaf. Mirrors `callee_leaf` in `server.rs`.
+/// `db.user.findOne` → `findOne`; `Logger::new` → `new`; bare names
+/// pass through unchanged.
+fn callee_leaf(name: &str) -> &str {
+    if let Some(after) = name.rsplit_once("::") {
+        return after.1;
+    }
+    if let Some(after) = name.rsplit_once('.') {
+        return after.1;
+    }
+    name
 }
 
 fn kind_str(k: &ChunkKind) -> &'static str {
@@ -782,5 +910,83 @@ function dispatchByName(name: string): void {
             .unwrap();
         assert!(hits.len() <= 3);
         assert!(!hits.is_empty());
+    }
+
+    // ── impact / reverse caller index ─────────────────────────────────
+
+    fn index_two_rust_files() -> PluckIndex {
+        // caller.rs calls `validate_token`; callee.rs defines it.
+        let caller_src = r#"
+pub fn handle_request(token: &str) -> bool {
+    validate_token(token)
+}
+"#;
+        let callee_src = r#"
+pub fn validate_token(token: &str) -> bool {
+    !token.is_empty()
+}
+"#;
+        let idx = PluckIndex::in_ram().unwrap();
+        let mut w = idx.writer().unwrap();
+        for c in chunk_source(caller_src, Language::Rust).unwrap() {
+            w.add_chunk("src/handler.rs", &c).unwrap();
+        }
+        for c in chunk_source(callee_src, Language::Rust).unwrap() {
+            w.add_chunk("src/auth.rs", &c).unwrap();
+        }
+        w.commit().unwrap();
+        idx
+    }
+
+    #[test]
+    fn lookup_callers_finds_direct_caller() {
+        let idx = index_two_rust_files();
+        let caller_ids = idx.lookup_callers("validate_token");
+        assert!(!caller_ids.is_empty(), "handle_request must appear as a caller");
+    }
+
+    #[test]
+    fn impact_depth_1_returns_direct_caller() {
+        let idx = index_two_rust_files();
+        let results = idx.impact("validate_token", 1).unwrap();
+        assert!(!results.is_empty(), "impact must return at least one caller");
+        assert!(
+            results.iter().any(|h| h.hit.symbol == "handle_request"),
+            "handle_request must be in impact result"
+        );
+        assert_eq!(results[0].depth, 1, "direct caller is at depth 1");
+    }
+
+    #[test]
+    fn impact_unknown_name_returns_empty() {
+        let idx = index_two_rust_files();
+        let results = idx.impact("definitely_not_a_real_fn", 1).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn impact_clamps_depth_to_3() {
+        let idx = index_two_rust_files();
+        // depth=99 must not panic or loop infinitely; it's clamped to 3.
+        let results = idx.impact("validate_token", 99).unwrap();
+        // Just check it returns without error.
+        let _ = results;
+    }
+
+    #[test]
+    fn hit_by_chunk_id_roundtrip() {
+        let idx = index_two_rust_files();
+        // Any chunk_id from lookup_callers must be retrievable.
+        let ids = idx.lookup_callers("validate_token");
+        assert!(!ids.is_empty());
+        let hit = idx.hit_by_chunk_id(ids[0]).unwrap();
+        assert!(hit.is_some(), "chunk_id must be retrievable after indexing");
+    }
+
+    #[test]
+    fn hit_by_chunk_id_missing_returns_none() {
+        let idx = index_two_rust_files();
+        let hit = idx.hit_by_chunk_id(999_999).unwrap();
+        assert!(hit.is_none());
     }
 }

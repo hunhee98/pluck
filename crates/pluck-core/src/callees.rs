@@ -7,9 +7,67 @@
 
 use std::collections::HashSet;
 
-use tree_sitter::{Parser, Query, QueryCursor};
+use tree_sitter::{Parser, Query, QueryCursor, Tree};
 
 use crate::chunker::Language;
+
+/// Extract callees using an **already-compiled** query against an
+/// **already-parsed** tree, scoped to `[scope_start, scope_end)`.
+/// Called per-chunk from `chunk_source`; the query is compiled once
+/// before the chunk loop to avoid N×compile overhead.
+pub fn extract_callees_with_query(
+    src: &str,
+    tree: &Tree,
+    query: &Query,
+    scope_start: usize,
+    scope_end: usize,
+) -> Vec<String> {
+    let mut cursor = QueryCursor::new();
+    cursor.set_byte_range(scope_start..scope_end);
+    let matches = cursor.matches(query, tree.root_node(), src.as_bytes());
+
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for m in matches {
+        for cap in m.captures {
+            let start = cap.node.start_byte();
+            if start < scope_start || start >= scope_end {
+                continue;
+            }
+            let text = src[cap.node.byte_range()].trim();
+            let normalized: String = text.split_whitespace().collect::<Vec<_>>().join("");
+            if normalized.is_empty() {
+                continue;
+            }
+            if seen.insert(normalized.clone()) {
+                out.push(normalized);
+            }
+        }
+    }
+    out
+}
+
+/// Extract callees from an **already-parsed** tree, scoped to the byte range
+/// `[scope_start, scope_end)`. Compiles the query internally — prefer
+/// `extract_callees_with_query` when extracting callees for multiple ranges.
+pub fn extract_callees_in_range(
+    src: &str,
+    tree: &Tree,
+    lang: Language,
+    scope_start: usize,
+    scope_end: usize,
+) -> Vec<String> {
+    let query_src = lang.callee_query_str();
+    if query_src.is_empty() {
+        return Vec::new();
+    }
+    let ts_lang = lang.ts_language();
+    let Ok(query) = Query::new(&ts_lang, query_src) else {
+        return Vec::new();
+    };
+    extract_callees_with_query(src, tree, &query, scope_start, scope_end)
+}
 
 /// Parse `src` as `lang` and return every direct callee name in source order,
 /// deduplicated. Returns an empty Vec on parse / query errors — peek

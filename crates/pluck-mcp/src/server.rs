@@ -22,7 +22,7 @@ use anyhow::Result;
 use pluck_core::callees::extract_callees;
 use pluck_core::chunker::Language;
 use pluck_core::digest::{self, Format};
-use pluck_core::index::{PluckIndex, SearchHit};
+use pluck_core::index::{ImpactHit, PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
 use pluck_core::outliner::{outline_source, render as render_outline};
 use pluck_core::semantic::{selected_model_id, StaticEncoder};
@@ -266,6 +266,21 @@ pub struct DigestParams {
     /// One of: cargo, npm, pnpm, yarn, bun, pytest, ci, gha, actions.
     #[serde(default)]
     pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ImpactParams {
+    /// Symbol whose upstream callers you want. Leaf-matched and
+    /// case-insensitive: `validate_token`, `Logger::new`, `db.insert`.
+    pub name: String,
+    /// BFS depth cap (1 = direct callers, 2 = callers-of-callers).
+    /// Clamped to 3. Default 1.
+    #[serde(default = "default_impact_depth")]
+    pub depth: u8,
+}
+
+fn default_impact_depth() -> u8 {
+    1
 }
 
 // ── Tool router ─────────────────────────────────────────────────────────────
@@ -751,6 +766,85 @@ impl PluckServer {
             "\n[digest: format={} saved={saved}B ({pct}%)]\n",
             result.format.name()
         ));
+        Ok(out)
+    }
+
+    #[doc = include_str!("../../../docs/mcp-descriptions/impact.md")]
+    #[tool(name = "impact")]
+    pub async fn impact(
+        &self,
+        Parameters(p): Parameters<ImpactParams>,
+    ) -> Result<String, McpError> {
+        let results = self
+            .inner
+            .index
+            .impact(&p.name, p.depth)
+            .map_err(|e| McpError::internal_error(format!("impact failed: {e}"), None))?;
+
+        if results.is_empty() {
+            return Ok(format!(
+                "no callers found for `{}`.\n\n\
+                 Try `pluck.grep` with the symbol name for callers in unindexed files, \
+                 or check the spelling (impact is leaf-matched and case-insensitive).\n",
+                p.name
+            ));
+        }
+
+        let prod: Vec<&ImpactHit> = results.iter().filter(|h| !h.is_test).collect();
+        let test: Vec<&ImpactHit> = results.iter().filter(|h| h.is_test).collect();
+
+        let mut out = format!(
+            "=== impact: {} (depth {}) — {} caller(s) ===\n\n",
+            p.name,
+            p.depth,
+            results.len()
+        );
+
+        for h in &prod {
+            out.push_str(&format!(
+                "[depth {}]  {}:L{}-{}  {} ({:?})\n",
+                h.depth,
+                h.hit.path,
+                h.hit.start_line,
+                h.hit.end_line,
+                h.hit.symbol,
+                h.hit.kind
+            ));
+            out.push_str(&h.hit.content);
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push('\n');
+        }
+
+        if !test.is_empty() {
+            out.push_str(&format!("[test callers — {}]\n", test.len()));
+            for h in &test {
+                out.push_str(&format!(
+                    "[depth {}]  {}:L{}-{}  {} ({:?})\n",
+                    h.depth,
+                    h.hit.path,
+                    h.hit.start_line,
+                    h.hit.end_line,
+                    h.hit.symbol,
+                    h.hit.kind
+                ));
+                out.push_str(&h.hit.content);
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push('\n');
+            }
+        }
+
+        // Session dedup: mark every rendered chunk seen.
+        {
+            let mut s = self.inner.session.lock().expect("session mutex");
+            for h in &results {
+                s.mark_seen(h.hit.chunk_id);
+            }
+        }
+
         Ok(out)
     }
 }
@@ -1384,6 +1478,59 @@ mod tests {
         assert!(out.contains("Finished"), "Finished must survive: {out}");
         assert!(!out.contains("Compiling serde"), "progress must be collapsed: {out}");
         assert!(out.contains("[digest: format=cargo"), "missing metadata footer: {out}");
+    }
+
+    #[tokio::test]
+    async fn impact_returns_callers_of_pluck_symbol() {
+        // Index this repo and ask for callers of `chunk_source` — a
+        // function called in multiple places — to verify the reverse
+        // index is populated end-to-end.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .impact(Parameters(ImpactParams {
+                name: "chunk_source".into(),
+                depth: 1,
+            }))
+            .await
+            .expect("impact");
+
+        // Must find at least one caller — indexer.rs calls chunk_source.
+        assert!(
+            out.contains("impact: chunk_source"),
+            "missing header: {out}"
+        );
+        assert!(
+            !out.contains("no callers found"),
+            "chunk_source must have callers: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn impact_unknown_symbol_returns_helpful_message() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .impact(Parameters(ImpactParams {
+                name: "definitely_not_a_real_fn_xyzzy".into(),
+                depth: 1,
+            }))
+            .await
+            .expect("impact");
+
+        assert!(out.contains("no callers found"), "got: {out}");
     }
 
     #[tokio::test]
