@@ -14,7 +14,7 @@
 //! handlers so the agent sees the full tool set during the MCP handshake
 //! and can plan accordingly — they're filled in in subsequent phases.
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command as Shell, Stdio};
 use std::sync::{Arc, Mutex};
 
@@ -54,20 +54,25 @@ impl PluckServer {
     /// BM25, no network or tokio runtime needed. `search_hybrid` still
     /// works (it degrades to BM25-only when no encoder is attached).
     pub fn new(repo_root: PathBuf) -> Result<Self> {
-        Self::build(repo_root, None, false)
+        Self::build(repo_root, None, false, None)
     }
 
     /// Production daemon constructor. Loads the embedding encoder (with
     /// PLUCK_DISABLE_EMBEDDINGS=1 escape hatch) and starts the notify
     /// watcher. Must be called inside a tokio runtime.
     pub fn new_with_watcher(repo_root: PathBuf) -> Result<Self> {
-        Self::build(repo_root, Some(DEFAULT_DEBOUNCE), true)
+        Self::build(repo_root, Some(DEFAULT_DEBOUNCE), true, None)
     }
 
     fn build(
         repo_root: PathBuf,
         debounce: Option<std::time::Duration>,
         load_encoder: bool,
+        // Test hook: when `Some`, overrides the env-resolved model id so
+        // an integration test can simulate `load_or_fetch` failure
+        // without racing on `PLUCK_EMBED_MODEL`. Production callers
+        // pass `None` and the model is resolved via `selected_model_id`.
+        model_id_override: Option<String>,
     ) -> Result<Self> {
         // Embedding encoder. Off entirely in test/CLI mode; in daemon
         // mode the load is opt-out via PLUCK_DISABLE_EMBEDDINGS=1. Load
@@ -79,7 +84,7 @@ impl PluckServer {
             tracing::info!("PLUCK_DISABLE_EMBEDDINGS set; running BM25-only");
             None
         } else {
-            let model_id = selected_model_id();
+            let model_id = model_id_override.unwrap_or_else(selected_model_id);
             match StaticEncoder::load_or_fetch(&model_id) {
                 Ok(enc) => {
                     tracing::info!(
@@ -133,14 +138,52 @@ impl PluckServer {
         })
     }
 
-    fn resolve_in_repo(&self, path: &str) -> PathBuf {
-        let p = PathBuf::from(path);
-        if p.is_absolute() {
-            p
+    /// Resolve a caller-supplied path against `repo_root` and enforce
+    /// that the result stays inside the indexed repo.
+    ///
+    /// Logical (component-level) normalization only — `..` segments are
+    /// folded so escape attempts like `subdir/../../etc/passwd` are
+    /// caught. Symlink-following is not checked here; that boundary
+    /// case is tracked for v0.1.x. For paths legitimately outside the
+    /// repo, agents are expected to fall back to bash.
+    fn resolve_in_repo(&self, path: &str) -> Result<PathBuf, McpError> {
+        let raw = PathBuf::from(path);
+        let joined = if raw.is_absolute() {
+            raw
         } else {
-            self.inner.repo_root.join(p)
+            self.inner.repo_root.join(raw)
+        };
+        let normalized = normalize_path(&joined);
+        let root = normalize_path(&self.inner.repo_root);
+        if !normalized.starts_with(&root) {
+            return Err(McpError::invalid_params(
+                format!(
+                    "pluck: {path}: path is outside the indexed repo ({}). \
+                     Use bash for byte-level work outside the indexed root.",
+                    root.display()
+                ),
+                None,
+            ));
+        }
+        Ok(normalized)
+    }
+}
+
+/// Component-level path normalization. Removes `.` segments and
+/// resolves `..` segments by popping the preceding component. Does
+/// not touch the filesystem (so it doesn't follow symlinks).
+fn normalize_path(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
         }
     }
+    out
 }
 
 // ── Tool parameter schemas ──────────────────────────────────────────────────
@@ -223,7 +266,7 @@ impl PluckServer {
     #[doc = include_str!("../../../docs/mcp-descriptions/read.md")]
     #[tool(name = "read")]
     pub async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
-        let path = self.resolve_in_repo(&p.path);
+        let path = self.resolve_in_repo(&p.path)?;
 
         // Stat first — we want a cheap, cat-shaped failure before
         // trying to buffer the whole file in memory.
@@ -346,7 +389,7 @@ impl PluckServer {
     #[tool(name = "grep")]
     pub async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
         let cwd = match p.cwd.as_deref() {
-            Some(c) => self.resolve_in_repo(c),
+            Some(c) => self.resolve_in_repo(c)?,
             None => self.inner.repo_root.clone(),
         };
 
@@ -963,6 +1006,112 @@ mod tests {
         assert!(
             msg.contains("not valid UTF-8") || msg.contains("binary"),
             "expected binary diagnostic, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_rejects_absolute_path_outside_repo() {
+        // Repo is the workspace root. Pluck must refuse `/etc/hosts` with
+        // a boundary diagnostic, not silently read it.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "/etc/hosts".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        let msg = format!("{:?}", res.expect_err("outside-repo absolute path must error"));
+        assert!(
+            msg.contains("outside the indexed repo"),
+            "expected boundary diagnostic, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_rejects_parent_traversal_outside_repo() {
+        // Relative `..` traversal that escapes the repo root must be
+        // caught by component-level normalization.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "../../../../etc/hosts".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        let msg = format!("{:?}", res.expect_err(".. escape must error"));
+        assert!(
+            msg.contains("outside the indexed repo"),
+            "expected boundary diagnostic, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_falls_back_to_bm25_when_encoder_load_fails() {
+        // Simulate the production "model fetch failed" path: pass a
+        // bogus model id to `build` and confirm the daemon comes up
+        // anyway, with a working BM25 index. Search must still return
+        // hits — proving the Err arm of the encoder match degrades
+        // gracefully instead of propagating.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::build(
+            repo,
+            None,
+            true,
+            Some("pluck-test/this-model-does-not-exist".to_string()),
+        )
+        .expect("daemon must come up even when encoder load fails");
+
+        let out = server
+            .search(Parameters(SearchParams {
+                query: "chunk_source".to_string(),
+                top_k: 3,
+                compact: false,
+            }))
+            .await
+            .expect("BM25 search must work without encoder");
+        assert!(!out.is_empty(), "BM25-only search should still return hits");
+    }
+
+    #[tokio::test]
+    async fn read_allows_internal_parent_traversal() {
+        // `subdir/../README.md` normalizes to `README.md`, which stays
+        // inside the repo. Must succeed.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "crates/../README.md".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        assert!(
+            res.is_ok(),
+            "internal `..` traversal must be allowed, got: {res:?}"
         );
     }
 
