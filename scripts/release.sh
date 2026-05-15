@@ -45,7 +45,7 @@ for crate in "${ORDER[@]}"; do
   else
     ( cd "crates/$crate" && cargo publish )
     # crates.io indexing can lag a few seconds between dependents.
-    if [ "$crate" != "${ORDER[-1]}" ]; then
+    if [ "$crate" != "${ORDER[$((${#ORDER[@]} - 1))]}" ]; then
       echo "    sleeping 20s so the next crate sees this one indexed..."
       sleep 20
     fi

@@ -2,7 +2,7 @@
 //!
 //! Holds a per-repo BM25 index and a session-scoped state map, and exposes
 //! the pluck.* tools over MCP. Tool descriptions are shipped via
-//! [`crate::descriptions`] (compiled in from `docs/mcp-descriptions/`).
+//! compiled in from `crates/pluck-mcp/descriptions/`.
 //!
 //! Phase 1 ships three tools wired through `pluck-core`:
 //!
@@ -313,7 +313,7 @@ fn default_plan_top_k() -> usize {
 
 #[tool_router(router = tool_router)]
 impl PluckServer {
-    #[doc = include_str!("../../../docs/mcp-descriptions/read.md")]
+    #[doc = include_str!("../descriptions/read.md")]
     #[tool(name = "read")]
     pub async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
         let path = self.resolve_in_repo(&p.path)?;
@@ -382,7 +382,7 @@ impl PluckServer {
         Ok(render_outline(&outline))
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/search.md")]
+    #[doc = include_str!("../descriptions/search.md")]
     #[tool(name = "search")]
     pub async fn search(
         &self,
@@ -433,7 +433,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/grep.md")]
+    #[doc = include_str!("../descriptions/grep.md")]
     #[tool(name = "grep")]
     pub async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
         let cwd = match p.cwd.as_deref() {
@@ -478,7 +478,7 @@ impl PluckServer {
         Ok(stdout)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/symbol.md")]
+    #[doc = include_str!("../descriptions/symbol.md")]
     #[tool(name = "symbol")]
     pub async fn symbol(
         &self,
@@ -563,7 +563,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/peek.md")]
+    #[doc = include_str!("../descriptions/peek.md")]
     #[tool(name = "peek")]
     pub async fn peek(&self, Parameters(p): Parameters<PeekParams>) -> Result<String, McpError> {
         let (path_filter, name) = match p.name.rsplit_once('/') {
@@ -633,7 +633,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/expand.md")]
+    #[doc = include_str!("../descriptions/expand.md")]
     #[tool(name = "expand")]
     pub async fn expand(
         &self,
@@ -764,7 +764,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/digest.md")]
+    #[doc = include_str!("../descriptions/digest.md")]
     #[tool(name = "digest")]
     pub async fn digest_tool(
         &self,
@@ -795,7 +795,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/impact.md")]
+    #[doc = include_str!("../descriptions/impact.md")]
     #[tool(name = "impact")]
     pub async fn impact(
         &self,
@@ -874,7 +874,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/deps.md")]
+    #[doc = include_str!("../descriptions/deps.md")]
     #[tool(name = "deps")]
     pub async fn deps(
         &self,
@@ -942,7 +942,7 @@ impl PluckServer {
         Ok(out)
     }
 
-    #[doc = include_str!("../../../docs/mcp-descriptions/plan.md")]
+    #[doc = include_str!("../descriptions/plan.md")]
     #[tool(name = "plan")]
     pub async fn plan(
         &self,
