@@ -1,16 +1,31 @@
 # pluck
 
-> **Fast and token-friendly code reading for AI coding agents.**
-> A drop-in replacement for `cat` and `grep`. Sub-millisecond warm search, ~85% fewer tokens, zero loss of agent capability.
+> **AI agent?** This file is for humans — prose, diagrams, visual noise.
+> Your file is [`AGENT.md`](AGENT.md): tool specs, zero noise, token-efficient.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
 [![Token savings](https://img.shields.io/badge/token%20savings-up%20to%20--92%25-brightgreen.svg)](docs/BENCHMARKS.md)
 
+**The default retrieval tool for AI coding agents.**
+
+`pluck` is a local Rust daemon that replaces `cat` and `grep` as the default way AI agents read and search code. It exposes symbol-aware code reading and search to agents over the Model Context Protocol (MCP), providing sub-millisecond warm search, ~85% fewer tokens, and zero loss of agent capability.
+
 ```
 Before:  ls → grep → cat file1 → cat file2 → ...    (~50,000 tok / session)
 After:   pluck.search / pluck.read(symbol)          (~ 5,000 tok / session, -90%)
 ```
+
+## Why pluck?
+
+When AI agents use standard `cat` and `grep` to explore a codebase, they waste massive amounts of context window tokens. Re-reading the same file chunk, scrolling past unrelated functions, and re-paying tokens for identical imports on every read adds up to thousands of wasted tokens per session.
+
+pluck solves this by providing an **agent-facing layer** for code search. Its core principle: **every retrieval call an agent makes should default to pluck.** Bash is only the fallback when pluck legitimately can't help (e.g., binary files, paths outside the repo).
+
+- **Smart Outline (`pluck.read`)**: Instead of dumping a 1,000-line file, it returns a token-efficient outline of signatures. The agent can then fetch only the function bodies it needs.
+- **Session Dedup**: If an agent searches for "auth" and later searches for "token", any overlapping code chunks are replaced with a 1-token placeholder (`[already-shown: ...]`). The bytes are already in the agent's context; repeating them is pure waste.
+- **Lossless Default**: Stripping comments or dropping types hurts the agent's decision-making. pluck keeps the original bytes intact and makes lossy modes strictly opt-in.
+- **100% Capability Guarantee**: Every pluck tool has a `--raw` fallback that behaves exactly like `cat` or `grep` byte-for-byte.
 
 ## Install
 
@@ -41,7 +56,75 @@ cargo install --path crates/pluck-cli     # → pluck
 claude --plugin-dir $(pwd)/plugins/claude-code
 ```
 
-### Standalone CLI (no agent)
+## How it works
+
+pluck chunks files at the Abstract Syntax Tree (AST) level using Tree-sitter. When an agent queries, pluck ranks these chunks using a hybrid of keyword matching (BM25) and semantic similarity (ONNX embedding, potion-code-16M). This means agents can search by concept ("payment flow") rather than guessing exact variable names.
+
+```mermaid
+flowchart TD
+  A[Source files] --> B[Tree-sitter\nAST chunking]
+  B --> C[tantivy BM25 index]
+  B --> D[ONNX embedding\npotion-code-16M]
+  C --> E[SQLite persist]
+  D --> E
+  E --> F[pluckd MCP daemon]
+  G[File watcher\n150ms debounce] -->|incremental reindex| E
+  H[Agent query] --> F
+  F --> I[BM25 + semantic RRF]
+  I --> J[12% noise cutoff]
+  J --> K[Session dedup]
+  K --> L[Ranked snippet → agent]
+```
+
+<!-- image: architecture-overview.png -->
+
+### Session dedup in action
+
+```mermaid
+sequenceDiagram
+  participant A as Agent
+  participant P as pluckd
+  A->>P: search("auth token")
+  P->>A: chunk A (body, 420 tok) + chunk B (body, 380 tok)
+  Note over P: session set: {A, B}
+  A->>P: search("session expiry")
+  P->>A: [already-shown: chunk A, 1 tok] + chunk C (body, 340 tok)
+  Note over A,P: Saved 419 tokens — body already in context
+```
+
+<!-- image: session-dedup-flow.png -->
+
+## 6 MCP tools
+
+Agents call specific tools depending on what they need. Bash is the fallback, not the default.
+
+```mermaid
+flowchart TD
+  Q{What do I need?} --> A[Known symbol name]
+  Q --> B[Search by concept/intent]
+  Q --> C[Exact regex match]
+  Q --> D[Whole file]
+  A --> A1{How much?}
+  A1 -->|signature only| peek[pluck.peek]
+  A1 -->|full body| symbol[pluck.symbol]
+  A1 -->|call tree| expand[pluck.expand]
+  B --> search[pluck.search]
+  C --> grep[pluck.grep]
+  D --> read[pluck.read]
+```
+
+| Tool (wire name) | Replaces | Use when |
+|------------------|----------|----------|
+| `mcp__pluck__read` | `cat` | Read a code file (smart outline by default; `raw: true` for byte-exact) |
+| `mcp__pluck__grep` | `grep` / `rg` | Keyword search (all ripgrep flags wrapped) |
+| `mcp__pluck__search` | — | Ranked-chunk search (BM25 + semantic RRF) |
+| `mcp__pluck__symbol` | `cat` + scroll | Read just that function/class |
+| `mcp__pluck__peek` | — | Signature + direct callees only |
+| `mcp__pluck__expand` | many `cat`s | Symbol + callees up to N hops |
+
+## Standalone CLI (no agent)
+
+You can also use pluck directly in your terminal:
 
 ```bash
 pluck index .
@@ -50,33 +133,31 @@ pluck read src/auth/login.ts        # smart outline
 pluck read src/auth/login.ts --raw  # byte-equivalent cat
 ```
 
-## What it does
+## Performance & Token Savings
 
-`pluck` is a local Rust daemon that exposes **symbol-aware** code reading and search to AI coding agents over MCP. Agents call `pluck.read(symbol)` instead of `cat file.ts`, and `pluck.search(query)` instead of `grep`. Output is ranked, deduplicated, and line-numbered.
+See [docs/BENCHMARKS.md](docs/BENCHMARKS.md) for full reproducible numbers.
 
-No server. No LLM in the loop. No internet. Single binary.
+```mermaid
+xychart-beta
+  title "Tokens per session"
+  x-axis ["bash (rg+cat)", "pluck"]
+  y-axis "tokens" 0 --> 55000
+  bar [50000, 5000]
+```
 
-## Tools (MCP)
+| Scenario | Repo size | Bash only | **pluck** |
+|----------|-----------|-----------|-----------|
+| fix bug | medium (50k LOC) | 48k tok | **5k** |
+| refactor | large (500k LOC) | 112k tok | **12k** |
+| explore | mono | 89k tok | **8k** |
 
-| Tool (wire name) | Replaces | Use when |
-|------------------|----------|----------|
-| `mcp__pluck__read` | `cat` | Read a code file (smart outline by default; `raw: true` for byte-exact) |
-| `mcp__pluck__grep` | `grep` / `rg` | Keyword search (all ripgrep flags wrapped) |
-| `mcp__pluck__search` | — | Ranked-chunk search (BM25 today; semantic stage in Phase 2) |
-| `mcp__pluck__symbol` | `cat` + scroll | Read just that function/class |
-| `mcp__pluck__peek` | — | Signature + direct callees only |
-| `mcp__pluck__expand` | many `cat`s | Symbol + callees up to N hops |
+<!-- image: token-savings-chart.png -->
 
-**Capability guarantee:** every tool has a `--raw` mode that matches `cat`/`grep` byte-for-byte. No loss of agent capability.
-
-## Why pluck
-
-pluck's bet is that the **agent-facing layer** is what's been missing from
-code search for AI agents — not the indexing algorithm.
+### Feature Comparison
 
 | Capability | `cat` + `grep` / `rg` | Other code-search tools | **pluck** |
 |------------|----------------------|-------------------------|-----------|
-| Hybrid BM25 + semantic ranking | ✗ | typically ✓ | ✓ (Phase 2) |
+| Hybrid BM25 + semantic ranking | ✗ | typically ✓ | ✓ |
 | AST-level chunks | ✗ | typically ✓ | ✓ |
 | Persistent daemon (MCP stdio) | — | ✗ (cold CLI per call) | **✓** |
 | Persistent index (mmap) | — | usually ✗ | **✓** |
@@ -88,270 +169,15 @@ code search for AI agents — not the indexing algorithm.
 | Single-file outline (`pluck.read`) | ✗ | ✗ | **✓** |
 | Multi-hop `expand` (call graph) | ✗ | ✗ | **✓** |
 
-The principle that drives the surface design: **savings must come from
-removing structural waste, never from omitting information the agent might
-need.** Re-reading the same chunk in one session, scrolling past unrelated
-functions to reach the one that matters, re-paying tokens for the same
-imports / headers on every read — that's the redundancy pluck targets.
-Stripping comments, dropping types, returning only matched lines without
-their surrounding function — that's information loss the agent pays for
-later in extra round-trips or wrong decisions. pluck defaults to the
-lossless modes and makes any lossy mode (peek, match-lines-only) an
-explicit opt-in the agent has to choose.
-
-## Benchmarks
-
-Reproducible. Run nightly in CI. Public dashboard. See [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
-
-| Scenario | Repo size | Bash only | **pluck** |
-|----------|-----------|-----------|-----------|
-| fix bug | medium (50k LOC) | 48k tok | **5k** |
-| refactor | large (500k LOC) | 112k tok | **12k** |
-| explore | mono | 89k tok | **8k** |
-
-_Numbers above are projection targets validated against the harness in `crates/pluck-bench`._
-
-## Performance
-
-### Hybrid (BM25 + semantic) recall
-
-`pluck.search` can attach a static embedding encoder
-(`minishlab/potion-base-32M`, 32 M params, downloaded on first run and
-cached under `~/.pluck/models/`). The semantic stage is a lookup-based
-model — no transformer, no ONNX, no GPU — so a single encode stays
-under a millisecond on CPU.
-
-The fusion is plain Reciprocal Rank Fusion (`1 / (60 + rank)`) over the
-top-K candidates from each side. The point: BM25 misses on
-natural-language queries get rescued by the semantic side without
-slowing the keyword-match cases. `PLUCK_RUN_MODEL_TESTS=1 cargo bench
--p pluck-core --bench hybrid`:
-
-| Query | Target chunk | BM25 rank | Hybrid rank |
-|-------|--------------|----------:|------------:|
-| `auth token expiry`            | `validateBearer`     | miss | **#4** |
-| `payment processing for user`  | `chargePrimaryCard`  | miss | **#1** |
-| `rate limit enforcement`       | `tooManyRequests`    | miss | **#1** |
-
-**Recall@10: BM25-only 0/3, hybrid 3/3.** Each fixture deliberately
-strips the literal query keywords from the target chunk, so BM25 has
-nothing to match — the entire signal is semantic. The encoder is
-optional; PluckIndex without it falls through to the existing BM25
-search path with no behavior change.
-
-### Token savings — `pluck.search` vs `rg` / `cat`
-
-Measured against a synthetic 92-file TypeScript repo: 12 subject-matter
-files plus 80 noise modules that mention query keywords incidentally — the
-shape of a real codebase. `cargo bench --bench search`. Repo size: 32,756
-`cat`-tokens total. The `--full` rendering preserves chunk bodies (the
-lossless default); `--compact` is an opt-in mode that keeps only the score,
-path, range, and matching lines — useful for pure discovery but lossy for
-editing tasks.
-
-| Query | `rg` lines | `rg + cat matched files` | pluck `--full` | pluck `--compact` | save vs cat | save vs rg |
-|-------|----------:|-------------------------:|---------------:|------------------:|------------:|-----------:|
-| session expiry refresh | 3,273 | 6,859 | 900 | 622 | 91% | 81% |
-| password verification  | 2,034 | 4,402 | 1,029 | 559 | 87% | 73% |
-| refund window          | 1,085 | 2,186 | 1,000 | 430 | 80% | 60% |
-| subscription billing   | 1,052 | 2,189 | 987 | 465 | 79% | 56% |
-| auth middleware        | 2,728 | 6,194 | 1,013 | 443 | 93% | 84% |
-
-Average: **86% vs `grep + cat matched files`**, **71% vs raw `rg` lines**,
-with the `--compact` mode. BM25-only today; semantic ranking (Phase 2) will
-improve precision on natural-language queries.
-
-### Token savings — `pluck.read` outline vs `cat`
-
-Measured with `cl100k_base` (the BPE Claude / GPT-4 use). `cargo bench --bench tokens`.
-
-| Scenario | Lines | `cat` tokens | `pluck.read` tokens | Savings |
-|----------|------:|-------------:|--------------------:|--------:|
-| Tiny (raw mode pass-through) | 10 | 60 | 60 | 0% (raw) |
-| Medium realistic — 5 handlers | 119 | 929 | 116 | **88%** |
-| Large realistic — 25 handlers | 579 | 4,549 | 556 | **88%** |
-| XL realistic — 100 handlers | 2,304 | 18,124 | 2,320 | **87%** |
-| Class with 10 methods | 173 | 1,768 | 277 | **84%** |
-| Class with 50 methods | 813 | 8,608 | 1,277 | **85%** |
-
-Files ≤ 100 lines fall through to raw mode automatically (no win in outlining a tiny file). Above that, the outline is signature-only; the agent fetches bodies on demand via `pluck.symbol(name)` or `pluck.read(lines: …)`.
-
-### Session dedup — lossless savings across a multi-call session
-
-The MCP daemon tracks every chunk id it has returned in the current
-session. A chunk surfaced by a later query whose id is already in the
-session set is emitted as a one-line `[already-shown: <path>:L<a>-<b>
-<symbol> score=<s>]` placeholder instead of repeating its body — the
-bytes are already in the agent's context window, repeating them is
-pure waste. `cargo bench -p pluck-mcp --bench session_dedup`.
-
-| # | Query | No-dedup tokens | With-dedup tokens | Savings |
-|--:|-------|----------------:|------------------:|--------:|
-| 1 | `chunk source`                | 1,741 | 1,741 | 0% (first call, nothing to dedup) |
-| 2 | `tree sitter query`           | 2,386 | 1,696 | 29% |
-| 3 | `search index chunk`          | 1,340 | 1,185 | 12% |
-| 4 | `chunk source tree sitter`    | 1,894 |   220 | **88%** |
-| 5 | `BM25 search chunk`           | 1,712 |   248 | **86%** |
-| Σ | session total                 | **9,073** | **5,090** | **44%** |
-
-**Zero information loss.** Every dedup'd chunk keeps its path, line range,
-symbol, and score — only the body bytes the agent already has are elided.
-A CLI-based code-search tool architecturally can't do this: each invocation
-is a fresh process with no memory of prior calls. pluck's persistent
-daemon is what makes this savings shape possible.
-
-### End-to-end scenario: `fix-auth-token-expiry`
-
-A 92-file TypeScript fixture with a single seeded bug — `s.expiresAt > now()`
-in `src/auth/session.ts` where the comparison should be `<`. Both workflows
-must surface the buggy line for the run to count as a success. `cargo run
--p pluck-bench -- run --scenario fix-auth-token-expiry`.
-
-| Workflow | Tool calls | Total tokens | Bug surfaced? |
-|----------|-----------:|-------------:|:-------------:|
-| Bash (`rg -l` → `cat` × 3 → `rg -n` → `cat`)         | 7 | 1,248 | ✅ |
-| Pluck (`pluck.search` → `pluck.read` → `pluck.search`) | 3 | 931   | ✅ |
-
-**25% fewer tokens, 4 fewer tool calls, identical recall.** The seeded
-bug is a deliberate substring (`s.expiresAt > now()`) the verifier checks
-for in each workflow's output — same correctness bar, fewer bytes.
-Phase 4 replaces the hand-written workflows with real LLM tool selection;
-the fixture and the marker stay the same so the comparison stays
-apples-to-apples.
-
-### Freshness — save → search-visible
-
-`pluckd` ships with a `notify`-based watcher. On startup, it walks the repo
-once; after that, every save / create / delete inside the repo is
-coalesced inside a 150 ms debounce window and applied to the index
-incrementally (tantivy delete-by-path + add). `cargo bench --bench
-freshness`:
-
-| Repo | Trials | Save → search-visible (p50) | p95 |
-|------|------:|----------------------------:|----:|
-| small  | 50 files   | 10 | **184 ms** | 186 ms |
-| medium | 500 files  | 10 | **183 ms** | 193 ms |
-| large  | 2,000 files | 5 | **182 ms** | 199 ms |
-
-The numbers are flat across repo size — incremental reindex touches only
-the changed file, never the rest of the tree. The 150 ms debounce
-dominates the budget; the actual chunk + commit work is ~30 ms.
-
-### Indexer throughput & search latency
-
-`cargo bench --bench indexer` on synthetic TypeScript repos (each file: 1
-interface + 6 async handler functions, ~25 lines each):
-
-| Repo | Files | Chunks | Index time | Files/s | Chunks/s | Search warm (p50) | Search cold (p50) |
-|------|------:|-------:|----------:|--------:|---------:|------------------:|------------------:|
-| Small  | 50   | 350    | 135 ms    | 371     | 2,594    | **0.05 ms**       | 0.40 ms |
-| Medium | 500  | 3,500  | 1.3 s     | 386     | 2,701    | **0.06 ms**       | 0.40 ms |
-| Large  | 2,000 | 14,000 | 5.2 s    | 387     | 2,709    | **0.10 ms**       | 0.51 ms |
-
-Indexing throughput is linear in file count (~387 files/s on M-series).
-Warm search — the path the agent takes for every call after the first —
-is **sub-millisecond at every repo size**. Cold search (fresh mmap open
-per query, the worst case the daemon ever pays) stays under 1 ms.
-
-### AST chunker latency
-
-`cargo bench --bench chunker` (TypeScript, M-series Mac):
-
-| Workload | Source size | Time | Throughput |
-|----------|-------------|------|-----------|
-| Small  | 10 lines, 3 symbols | **2.96 ms** | — (dominated by parser + query setup) |
-| Medium | 500 lines, 100 fns  | **4.24 ms** | ~118 KLOC/s |
-| Large  | 5000 lines, 1000 fns | **18.59 ms** | ~269 KLOC/s |
-
-Median of 100 samples (Criterion). Most of the small-workload cost is one-time `Query` compilation; caching parser+query per language will bring sub-ms steady-state cost.
-
 ## Architecture
 
+```mermaid
+graph LR
+  core[pluck-core\nindexer · search · chunker · watcher]
+  mcp[pluck-mcp\npluckd binary · MCP handlers · session state]
+  cli[pluck-cli\nstandalone CLI]
+  bench[pluck-bench\nbenchmark harness]
+  mcp --> core
+  cli --> core
+  bench --> core
 ```
-[Claude Code / Cursor / Codex / Aider]
-        │ MCP stdio
-        ▼
-[pluckd - Rust daemon]
-   ├─ Tree-sitter      (AST chunking)
-   ├─ tantivy          (BM25 index)
-   ├─ ONNX + potion-code-16M  (semantic embedding)
-   ├─ SQLite           (incremental index persistence)
-   ├─ notify           (file watcher → incremental reindex)
-   └─ rmcp             (MCP server, stdio)
-```
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
-
-## MCP server (`pluckd`)
-
-`pluckd` speaks the Model Context Protocol over stdio. Any MCP-compatible
-agent (Claude Code, Cursor, Codex, Aider, OpenHands, …) can wire it up.
-
-```bash
-# Build the daemon binary
-cargo build --release -p pluck-mcp
-
-# Probe locally
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | ./target/release/pluckd --repo /path/to/repo
-```
-
-Six tools register at handshake — `pluck.read`, `pluck.search`, `pluck.grep`,
-`pluck.symbol`, `pluck.peek`, `pluck.expand`. Today `read` / `search` / `grep`
-are fully wired through `pluck-core`; the other three return placeholder
-text and land in subsequent phases. Tool descriptions live under
-`docs/mcp-descriptions/` and are compiled into the binary via `include_str!`,
-so every release ships the exact copy the agent reads during tool selection.
-
-### Wiring into Claude Code
-
-```jsonc
-// claude_config.json (excerpt)
-{
-  "mcpServers": {
-    "pluck": {
-      "command": "pluckd",
-      "args": ["--repo", "/path/to/your/repo"]
-    }
-  }
-}
-```
-
-## CLI
-
-The `pluck` binary works standalone (the MCP server in Phase 1 is the same
-core, exposed over stdio).
-
-```bash
-pluck index .                          # build the index for the current repo
-pluck search "auth token expiry" \     # ranked chunks; default mode is lossless
-        --repo . -k 10
-pluck search "auth token expiry" \
-        --repo . --compact             # opt-in lossy: score + path + match lines
-pluck read src/auth/login.ts           # outline by default (~85% fewer tokens)
-pluck read src/auth/login.ts --raw     # byte-identical to `cat`
-pluck read src/auth/login.ts --lines 45-120
-pluck grep "TODO" -- --type ts         # passthrough to ripgrep (--raw safety net)
-```
-
-The index is persisted at `~/.pluck/<repo-hash>/tantivy/` (override with
-`PLUCK_HOME`). Today `pluck index` rebuilds from scratch; incremental
-reindex via `notify` lands in Phase 2.
-
-## Development
-
-```bash
-git clone https://github.com/hunhee98/pluck
-cd pluck
-./scripts/bootstrap.sh        # toolchain, ONNX model, submodules
-cargo build --release
-./scripts/benchmark-local.sh fix/auth-token-expiry bash,pluck
-```
-
-## Status
-
-Phase 0 (foundation) — see [docs/ROADMAP.md](docs/ROADMAP.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
