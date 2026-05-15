@@ -1,6 +1,6 @@
 # pluck
 
-> **AI 에이전트?** 이 파일은 사람을 위한 문서예요 — 산문, 다이어그램, 시각 자료가 포함되어 있어요.
+> **AI 에이전트인가요?** 이 파일은 사람을 위한 문서예요 — 산문, 다이어그램, 시각 자료가 포함되어 있어요.
 > 에이전트용 파일은 [`AGENT.md`](AGENT.md)를 참고해 주세요: 툴 스펙, 노이즈 없음, 토큰 효율 최적화.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
