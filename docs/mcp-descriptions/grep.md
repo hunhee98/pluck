@@ -1,21 +1,37 @@
-Keyword search across the repo. Wraps ripgrep — all rg flags pass through.
+Keyword / regex search across files. Wraps ripgrep — every `rg` flag
+passes through verbatim.
 
-PREFER THIS over Bash `grep` or `rg` for any literal/regex search inside the
-indexed repo.
+**Use this for every keyword grep inside the repo.** It is the default
+substitute for `grep -rn`, `rg`, and built-in Grep tools. The
+underlying engine is the same ripgrep your shell uses; the win is
+that you skip the bash fork/exec round-trip, and the daemon keeps
+its file cache warm across calls.
 
 ## When to call
+
+- Any time you would run `rg <pattern>` or `grep -rn <pattern>`.
 - Find every occurrence of a literal string or regex.
-- Locate where a known symbol name appears (use `pluck.symbol` instead if you
-  want just the definition).
+- Find every location a known symbol name appears (use `pluck.symbol`
+  instead if you want only the definition; this tool gives every
+  match including call sites and comments).
 
-## Why
-Same speed as raw ripgrep, but results are ranked by combined keyword +
-file-importance score, and matched lines arrive with surrounding context
-already trimmed to the relevant chunk — agent doesn't need a follow-up cat.
+## Modes
 
-## Flags
-All ripgrep flags work: `-A` `-B` `-C` `-l` `-c` `-v` `-i` `-E` `-t <type>` etc.
+- default `pattern` — literal substring, like `rg <pattern>`.
+- `args: [...]` — every ripgrep flag works. Examples:
+  `args: ["-A", "5"]`  — 5 lines of trailing context.
+  `args: ["--type", "ts"]`  — restrict to TypeScript.
+  `args: ["-e", "<regex>"]` — regex form.
+- `cwd: "<path>"` — grep in a subdirectory or absolute path instead
+  of the repo root.
 
-## When to fall back to Bash
-- Pipe the output into another shell tool (`jq`, `awk`, etc.).
-- Target is outside the indexed repo.
+## When to fall back to bash
+
+- The target is outside the indexed repo and you cannot pass `cwd`.
+- You need to pipe the output into another shell tool inline.
+- ripgrep is not installed (you'll see a clear "is `rg` on PATH?"
+  diagnostic).
+
+Otherwise: default to `pluck.grep`. It is strictly at least as
+efficient as `rg` from bash, and saves the agent the fork/exec
+overhead on every call.

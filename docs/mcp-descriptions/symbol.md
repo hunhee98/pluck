@@ -1,24 +1,36 @@
-Read exactly one symbol (function, class, struct, method) by name.
+Read exactly one named symbol (function, class, struct, method).
 
-USE THIS instead of `cat`-ing the whole file when you only need that one
-symbol's body.
+**Use this whenever you know the symbol name and want only that
+symbol's body.** It is the default substitute for `cat <file>` followed
+by scrolling to a function — strictly fewer tokens, no manual line
+counting, and the response is the chunk the indexer already extracted.
 
 ## When to call
-- You found a function name via `pluck.search` or `pluck.grep` and want its
-  body without reading the surrounding file.
-- You know the symbol name and want a precise, minimal read.
 
-## Why
-For a 800-line file containing a 40-line function, `cat` costs ~6000 tokens
-and `pluck.symbol` costs ~300. Same information for the task, 20x less budget.
+- You found a symbol name via `pluck.search` / `pluck.grep` and want
+  its body.
+- You know the function/class name from earlier context.
+- Editing a known function — fetch its current body before producing
+  the edit.
 
-## Disambiguation
-- `handleLogin` — returns body if unambiguous.
-- `auth/handleLogin` — path-qualified form for collisions.
-- Ambiguous name returns a candidate list (`kind`, `path`) — pick one and
+## Name resolution
+
+- `handleLogin` — returns the body if exactly one chunk matches.
+- `auth/handleLogin` — path-qualified for collisions (`<path>/<name>`,
+  splits on the last `/`).
+- Ambiguous bare names return a candidate list with `path` + `kind`;
   re-call with the path-qualified form.
 
-## Fallback
-If the symbol isn't in the index (e.g. it's a string literal, not a defined
-symbol), `pluck.symbol` automatically falls back to a `pluck.grep` for the
-name.
+## Token math
+
+A 40-line function inside an 800-line file costs ~6 000 tokens via
+`cat`; `pluck.symbol` costs ~300. Same information, 20× cheaper.
+
+## When to fall back
+
+- The symbol is not a defined function/class (e.g. an inline arrow
+  callback) — use `pluck.search` or `pluck.grep` instead.
+- The target is outside the indexed repo — use bash.
+
+Session dedup applies: a symbol fetched earlier in the session
+collapses to a `[already-shown: …]` placeholder on the second request.

@@ -144,6 +144,11 @@ impl PluckServer {
 
 // ── Tool parameter schemas ──────────────────────────────────────────────────
 
+/// Largest file we'll buffer fully in memory for a single read.
+/// Bigger files force `lines: "<a>-<b>"` or fall back to bash. Keeps
+/// the daemon from being OOMed by one bad request.
+pub const MAX_READ_BYTES: u64 = 4 * 1024 * 1024;
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ReadParams {
     /// Path to the file, relative to the repo root (absolute paths also work).
@@ -181,6 +186,11 @@ pub struct GrepParams {
     /// Extra `rg` flags. E.g. `["-A", "5", "--type", "ts"]`.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Working directory to grep in, relative to repo root or absolute.
+    /// Defaults to the indexed repo root. Use this when the agent needs
+    /// to grep a subtree (`src/auth/`) or somewhere outside the repo.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -213,9 +223,49 @@ impl PluckServer {
     #[tool(name = "read")]
     pub async fn read(&self, Parameters(p): Parameters<ReadParams>) -> Result<String, McpError> {
         let path = self.resolve_in_repo(&p.path);
-        let src = std::fs::read_to_string(&path).map_err(|e| {
-            McpError::invalid_params(format!("failed to read {:?}: {e}", p.path), None)
+
+        // Stat first — we want a cheap, cat-shaped failure before
+        // trying to buffer the whole file in memory.
+        let meta = std::fs::metadata(&path).map_err(|e| {
+            McpError::invalid_params(read_err(&p.path, &e), None)
         })?;
+        if meta.is_dir() {
+            return Err(McpError::invalid_params(
+                format!("pluck.read: {}: is a directory", p.path),
+                None,
+            ));
+        }
+        if meta.len() > MAX_READ_BYTES {
+            return Err(McpError::invalid_params(
+                format!(
+                    "pluck.read: {} is {} bytes (cap {}). Use `lines: \"A-B\"` to slice, or fall back to bash for the full file.",
+                    p.path,
+                    meta.len(),
+                    MAX_READ_BYTES
+                ),
+                None,
+            ));
+        }
+
+        // Read bytes once. UTF-8 is required for `raw` text output (MCP
+        // responses are JSON strings) and for the outliner. Binary
+        // files trip a clean diagnostic; bash remains the right tool
+        // for byte-level work.
+        let bytes = std::fs::read(&path).map_err(|e| {
+            McpError::invalid_params(read_err(&p.path, &e), None)
+        })?;
+        let src = match std::str::from_utf8(&bytes) {
+            Ok(s) => s.to_string(),
+            Err(_) => {
+                return Err(McpError::invalid_params(
+                    format!(
+                        "pluck.read: {} is not valid UTF-8 (likely binary). Use bash `cat` for byte-level reads.",
+                        p.path
+                    ),
+                    None,
+                ));
+            }
+        };
 
         if p.raw {
             return Ok(src);
@@ -294,22 +344,45 @@ impl PluckServer {
     #[doc = include_str!("../../../docs/mcp-descriptions/grep.md")]
     #[tool(name = "grep")]
     pub async fn grep(&self, Parameters(p): Parameters<GrepParams>) -> Result<String, McpError> {
+        let cwd = match p.cwd.as_deref() {
+            Some(c) => self.resolve_in_repo(c),
+            None => self.inner.repo_root.clone(),
+        };
+
         let mut cmd = Shell::new("rg");
         cmd.arg(&p.pattern);
         for a in &p.args {
             cmd.arg(a);
         }
-        cmd.current_dir(&self.inner.repo_root);
+        cmd.current_dir(&cwd);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
+
         let out = cmd.output().map_err(|e| {
-            McpError::internal_error(format!("failed to invoke ripgrep: {e}"), None)
+            McpError::internal_error(
+                format!("pluck.grep: failed to invoke ripgrep: {e} (is `rg` on PATH?)"),
+                None,
+            )
         })?;
+
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        // ripgrep exits 1 when there are no matches — that's not an MCP
-        // error; just return the (empty) stdout so the agent gets a
-        // truthful answer.
+        let code = out.status.code().unwrap_or(-1);
+
+        // ripgrep exit codes:
+        //   0 = matches found
+        //   1 = no matches (not an error; return empty stdout)
+        //   2 = real error (bad pattern, unreadable file, etc.)
+        // We propagate stderr on code 2 so the agent sees the same
+        // diagnostic it would see from running `rg` in a shell.
+        if code == 2 {
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            return Err(McpError::invalid_params(
+                format!("pluck.grep: ripgrep exited 2:\n{stderr}"),
+                None,
+            ));
+        }
+
         Ok(stdout)
     }
 
@@ -614,6 +687,22 @@ impl ServerHandler for PluckServer {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/// Format a filesystem error the way `cat` does it, so agents trained
+/// on bash transcripts recognize the shape immediately.
+///
+/// Note: directories are detected separately via `metadata().is_dir()`
+/// before this function is ever called, so we don't need to match
+/// `ErrorKind::IsADirectory` here — that variant is also gated behind
+/// a newer rust-stable than the project's MSRV.
+fn read_err(path: &str, e: &std::io::Error) -> String {
+    use std::io::ErrorKind;
+    match e.kind() {
+        ErrorKind::NotFound => format!("pluck.read: {path}: No such file or directory"),
+        ErrorKind::PermissionDenied => format!("pluck.read: {path}: Permission denied"),
+        _ => format!("pluck.read: {path}: {e}"),
+    }
+}
+
 fn parse_line_range(s: &str) -> Result<(u32, u32), McpError> {
     let (a, b) = s.split_once('-').ok_or_else(|| {
         McpError::invalid_params(format!("expected 'start-end', got {s:?}"), None)
@@ -798,6 +887,82 @@ mod tests {
         assert_eq!(callee_leaf("db.user.findOne"), "findOne");
         assert_eq!(callee_leaf("Logger::new"), "new");
         assert_eq!(callee_leaf("std::collections::HashMap::new"), "new");
+    }
+
+    #[tokio::test]
+    async fn read_rejects_directory() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "crates".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        assert!(res.is_err(), "directory must be rejected");
+        let msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            msg.contains("is a directory"),
+            "expected cat-style 'is a directory' diagnostic, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_rejects_missing_with_cat_style_message() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "does/not/exist.rs".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        assert!(res.is_err());
+        let msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            msg.contains("No such file or directory"),
+            "expected cat-style 'No such file or directory', got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_rejects_binary_file() {
+        // Write a binary file in a temp dir, point the server at the
+        // tempdir, ask for the file. Must error with the binary
+        // diagnostic.
+        let nano = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("pluck-bin-{nano}"));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("bin.dat"), [0xFFu8, 0xFE, 0x00, 0x01, 0x02]).unwrap();
+        let server = PluckServer::new(tmp.clone()).expect("server new");
+        let res = server
+            .read(Parameters(ReadParams {
+                path: "bin.dat".to_string(),
+                raw: true,
+                lines: None,
+            }))
+            .await;
+        let _ = std::fs::remove_dir_all(&tmp);
+        let msg = format!("{:?}", res.expect_err("binary must error"));
+        assert!(
+            msg.contains("not valid UTF-8") || msg.contains("binary"),
+            "expected binary diagnostic, got: {msg}"
+        );
     }
 
     #[tokio::test]

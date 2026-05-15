@@ -1,24 +1,37 @@
-Show only the signature and direct callee names for a symbol. No body.
+Signature + direct-callee names for a symbol. No body.
 
-USE THIS when you need the interface, not the implementation.
+**Use this when you need the interface, not the implementation.** It
+is the cheapest way to learn what a function takes / returns and what
+it depends on — strictly fewer tokens than `pluck.symbol` for the same
+question.
 
 ## When to call
+
 - "What does this function take and return?"
 - "Who does this function call?" (one-hop callees only)
 - Building a mental model of an API surface without reading bodies.
-
-## Why
-A 40-line function body costs ~200 tokens to read. Its signature line + a
-callee list costs ~15 tokens. 10–15x savings for the common "I just need
-the type signature" case.
+- Refactor planning: who calls whom inside this module.
 
 ## Output shape
+
 ```
-async function handleLogin(req: LoginReq): Promise<AuthResult>
-  throws: AuthError, ValidationError
-  calls:  validateToken, db.user.findOne, audit.log
+src/auth/login.ts:L45-89  handleLogin (Function)
+async function handleLogin(req: LoginRequest): Promise<AuthResult>
+  calls: validateToken, db.user.findOne, audit.log
 ```
 
+## Token math
+
+A 40-line function body costs ~200 tokens via `pluck.symbol`.
+Signature + callee list costs ~15. **~10× cheaper** for "I just need
+the interface" tasks.
+
 ## When to escalate
-- Need the body — use `pluck.symbol`.
-- Need callees-of-callees — use `pluck.expand` with `hop` ≥ 2.
+
+- Need the body itself — `pluck.symbol`.
+- Need callees-of-callees — `pluck.expand` with `hop >= 2`.
+
+## Name resolution
+
+Same `<path>/<name>` disambiguation as `pluck.symbol`. Ambiguous bare
+names return a candidate list.
