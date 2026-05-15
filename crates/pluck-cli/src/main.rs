@@ -10,6 +10,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use pluck_core::chunker::Language;
+use pluck_core::digest::{self, Format};
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::{index_repo, IndexStats};
 use pluck_core::outliner::{outline_source, render as render_outline};
@@ -85,6 +86,24 @@ enum Command {
         repo: Option<PathBuf>,
     },
 
+    /// Compress verbose tool output (cargo, npm, pytest, GitHub Actions).
+    ///
+    /// Reads from stdin by default. Pass a file path to read from a file
+    /// instead. Output is written to stdout; the compressed text is always
+    /// <= the original byte count by construction.
+    Digest {
+        /// Path to the log file. Omit to read from stdin.
+        path: Option<PathBuf>,
+        /// Force a specific format instead of auto-detecting.
+        /// One of: cargo, npm, pnpm, yarn, pytest, ci, gha, actions.
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<String>,
+        /// Print the detected format and byte savings to stderr instead
+        /// of compressing (useful for debugging detection).
+        #[arg(long)]
+        show_format: bool,
+    },
+
     /// Print version.
     Version,
 }
@@ -126,6 +145,11 @@ fn main() -> Result<()> {
             pluckd,
             repo,
         } => cmd_init(target, pluckd, repo)?,
+        Command::Digest {
+            path,
+            format,
+            show_format,
+        } => cmd_digest(path, format.as_deref(), show_format)?,
     }
     Ok(())
 }
@@ -491,9 +515,53 @@ fn print_compact(hits: &[SearchHit], query: &str) {
     }
 }
 
+fn cmd_digest(path: Option<PathBuf>, format_name: Option<&str>, show_format: bool) -> Result<()> {
+    use std::io::Read as _;
+
+    let input = match path {
+        Some(p) => {
+            std::fs::read_to_string(&p)
+                .with_context(|| format!("read {}", p.display()))?
+        }
+        None => {
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .context("read stdin")?;
+            buf
+        }
+    };
+
+    let fmt: Option<Format> = match format_name {
+        Some(name) => Some(Format::parse_name(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown format {name:?}; valid names: cargo, npm, pnpm, yarn, bun, pytest, ci, gha, actions"
+            )
+        })?),
+        None => None,
+    };
+
+    let result = digest::digest(&input, fmt);
+
+    if show_format {
+        let saved = result.input_bytes.saturating_sub(result.text.len());
+        let pct = (result.savings_fraction() * 100.0).round() as u32;
+        eprintln!(
+            "format: {}  input: {} bytes  output: {} bytes  saved: {} bytes ({pct}%)",
+            result.format.name(),
+            result.input_bytes,
+            result.text.len(),
+            saved,
+        );
+    }
+
+    print!("{}", result.text);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml};
+    use super::{cmd_digest, cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml};
     use std::path::PathBuf;
 
     #[test]
@@ -759,5 +827,28 @@ trust_level = "trusted"
             result.is_ok(),
             "UTF-8 text must read clean, got: {result:?}"
         );
+    }
+
+    #[test]
+    fn digest_reads_file_and_compresses_cargo_output() {
+        let nano = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("pluck-digest-{nano}"));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let log = tmp.join("cargo.log");
+        let content = "   Compiling serde v1.0.0\n   Compiling tokio v1.30.0\n    Finished `dev` profile in 3.21s\n";
+        std::fs::write(&log, content).unwrap();
+        let result = cmd_digest(Some(log), None, false);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(result.is_ok(), "digest must succeed: {result:?}");
+    }
+
+    #[test]
+    fn digest_rejects_unknown_format_name() {
+        let result = cmd_digest(None, Some("not-a-format"), false);
+        let msg = format!("{:?}", result.expect_err("unknown format must error"));
+        assert!(msg.contains("unknown format"), "got: {msg}");
     }
 }
