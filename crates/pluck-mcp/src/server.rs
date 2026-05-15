@@ -294,6 +294,21 @@ pub struct DepsParams {
     pub reverse: bool,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PlanParams {
+    /// Free-form task description, e.g. "fix the bug where auth tokens
+    /// expire too early" or "audit how request validation works".
+    pub task: String,
+    /// Maximum number of next-call recommendations. Clamped to [1, 5].
+    /// Default 4.
+    #[serde(default = "default_plan_top_k")]
+    pub top_k: usize,
+}
+
+fn default_plan_top_k() -> usize {
+    4
+}
+
 // ── Tool router ─────────────────────────────────────────────────────────────
 
 #[tool_router(router = tool_router)]
@@ -924,6 +939,62 @@ impl PluckServer {
                 out.push_str(&format!("{}\n", d.raw));
             }
         }
+        Ok(out)
+    }
+
+    #[doc = include_str!("../../../docs/mcp-descriptions/plan.md")]
+    #[tool(name = "plan")]
+    pub async fn plan(
+        &self,
+        Parameters(p): Parameters<PlanParams>,
+    ) -> Result<String, McpError> {
+        let plan = self
+            .inner
+            .index
+            .plan(&p.task, p.top_k)
+            .map_err(|e| McpError::internal_error(format!("plan failed: {e}"), None))?;
+
+        let mut out = format!(
+            "=== plan: \"{}\" — confidence: {} ===\n\n",
+            p.task,
+            plan.confidence.as_str()
+        );
+
+        if plan.probe_hits.is_empty() {
+            out.push_str("No probe hits.\n\n");
+            if let Some(b) = &plan.broaden {
+                out.push_str(b);
+                out.push('\n');
+            }
+            return Ok(out);
+        }
+
+        out.push_str("Top probe results:\n");
+        for h in plan.probe_hits.iter().take(5) {
+            out.push_str(&format!(
+                "  {:.2}  {}:L{}-{}  {} ({:?})\n",
+                h.score, h.path, h.start_line, h.end_line, h.symbol, h.kind
+            ));
+        }
+        out.push('\n');
+
+        out.push_str("Recommended next calls:\n");
+        for (i, step) in plan.steps.iter().enumerate() {
+            out.push_str(&format!(
+                "  {}. pluck.{} {}\n     → {}\n",
+                i + 1,
+                step.tool,
+                step.target,
+                step.reason
+            ));
+        }
+
+        if let Some(b) = &plan.broaden {
+            out.push('\n');
+            out.push_str(b);
+            out.push('\n');
+        }
+
         Ok(out)
     }
 }
@@ -1663,6 +1734,42 @@ mod tests {
         assert!(
             out.contains("importers of") || out.contains("no importers"),
             "got: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_returns_actionable_recommendations() {
+        // Run against this repo. The query is a real concept that has at
+        // least one strong hit so the planner should propose concrete next
+        // calls — not just fall through to the broaden hint.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .plan(Parameters(PlanParams {
+                task: "tree sitter chunk source extraction".into(),
+                top_k: 4,
+            }))
+            .await
+            .expect("plan");
+
+        assert!(out.contains("=== plan:"), "got: {out}");
+        assert!(out.contains("confidence:"), "got: {out}");
+        assert!(out.contains("Top probe results:"), "got: {out}");
+        assert!(out.contains("Recommended next calls:"), "got: {out}");
+        // Every step renders as `pluck.<tool> <target>` — at least one of
+        // the supported tools should appear.
+        assert!(
+            out.contains("pluck.symbol")
+                || out.contains("pluck.peek")
+                || out.contains("pluck.read")
+                || out.contains("pluck.impact"),
+            "expected at least one tool recommendation, got: {out}"
         );
     }
 

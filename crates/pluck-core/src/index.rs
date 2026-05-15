@@ -6,7 +6,7 @@
 //! see `doc_comment` so natural-language queries can use API prose
 //! without changing BM25-only behavior.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -554,6 +554,206 @@ impl PluckIndex {
         }
         out.sort_by(|a, b| a.raw.cmp(&b.raw));
         out
+    }
+
+    /// Exploration recommender. Given a free-form task description, probe
+    /// the index with a hybrid search and propose the next 3-5 retrieval
+    /// calls the agent should make. The plan is a *guardrail*, not an
+    /// oracle — low-confidence output is a lead, not a fact.
+    pub fn plan(&self, task: &str, top_k: usize) -> Result<PlanResult> {
+        let top_k = top_k.clamp(1, 5);
+        let probe_k = 10;
+        let hits = self.search_with_cutoff(task, probe_k, 0.0)?;
+
+        if hits.is_empty() {
+            return Ok(PlanResult {
+                confidence: PlanConfidence::Low,
+                probe_hits: vec![],
+                steps: vec![],
+                broaden: Some(
+                    "No probe hits. Try `pluck.grep` with a concrete identifier from the task, or `pluck.search` with a simpler query."
+                        .to_string(),
+                ),
+            });
+        }
+
+        let confidence = plan_confidence(&hits);
+        let steps = plan_steps(&hits, top_k);
+        let broaden = if matches!(confidence, PlanConfidence::Low) {
+            Some(
+                "Score distribution is flat — none of these is a clear lead. Broaden with `pluck.grep` on a concrete identifier or rephrase the task with more specific terms."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+
+        Ok(PlanResult {
+            confidence,
+            probe_hits: hits,
+            steps,
+            broaden,
+        })
+    }
+}
+
+/// Output of [`PluckIndex::plan`].
+#[derive(Debug, Clone)]
+pub struct PlanResult {
+    pub confidence: PlanConfidence,
+    /// Raw probe-search hits used to build the plan (up to 10).
+    pub probe_hits: Vec<SearchHit>,
+    /// Concrete next-call recommendations (3-5).
+    pub steps: Vec<PlanStep>,
+    /// Suggested broader query when confidence is low. `None` otherwise.
+    pub broaden: Option<String>,
+}
+
+/// One recommended next call.
+#[derive(Debug, Clone)]
+pub struct PlanStep {
+    /// Tool name (without the `mcp__pluck__` prefix): `read`, `symbol`,
+    /// `peek`, `expand`, `impact`.
+    pub tool: &'static str,
+    /// Target argument — symbol name or repo-relative path depending on
+    /// the tool.
+    pub target: String,
+    /// One-line rationale for the agent.
+    pub reason: String,
+    /// The probe hit that motivated this step.
+    pub source: SearchHit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanConfidence {
+    High,
+    Medium,
+    Low,
+}
+
+impl PlanConfidence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
+}
+
+fn plan_confidence(hits: &[SearchHit]) -> PlanConfidence {
+    if hits.is_empty() {
+        return PlanConfidence::Low;
+    }
+    let top = hits[0].score.max(0.0001);
+    // Compare top score against rank-5 (or the last hit if fewer).
+    let cmp_idx = hits.len().min(5).saturating_sub(1);
+    let cmp = hits[cmp_idx].score.max(0.0001);
+    let ratio = top / cmp;
+    if ratio >= 2.0 {
+        PlanConfidence::High
+    } else if ratio >= 1.2 {
+        PlanConfidence::Medium
+    } else {
+        PlanConfidence::Low
+    }
+}
+
+fn plan_steps(hits: &[SearchHit], max: usize) -> Vec<PlanStep> {
+    // Count how often each path shows up in the top results — if a file
+    // has multiple chunks ranking, one `read` covers them all.
+    let consider = hits.len().min(max * 2);
+    let mut file_counts: HashMap<String, usize> = HashMap::new();
+    for h in hits.iter().take(consider) {
+        *file_counts.entry(h.path.clone()).or_insert(0) += 1;
+    }
+
+    let mut steps: Vec<PlanStep> = Vec::new();
+    let mut seen_targets: HashSet<String> = HashSet::new();
+    let mut files_emitted: HashSet<String> = HashSet::new();
+
+    for (i, h) in hits.iter().enumerate() {
+        if steps.len() >= max {
+            break;
+        }
+
+        let count = file_counts.get(&h.path).copied().unwrap_or(1);
+        // Multi-chunk file: one `read` step covers all of them.
+        if count > 1 {
+            if files_emitted.insert(h.path.clone()) {
+                steps.push(PlanStep {
+                    tool: "read",
+                    target: h.path.clone(),
+                    reason: format!(
+                        "{} chunks from this file rank in the top results — outline once for shared context",
+                        count
+                    ),
+                    source: h.clone(),
+                });
+            }
+            continue;
+        }
+
+        if !seen_targets.insert(h.symbol.clone()) {
+            continue;
+        }
+
+        let (tool, reason) = recommend_tool(h);
+        steps.push(PlanStep {
+            tool,
+            target: h.symbol.clone(),
+            reason,
+            source: h.clone(),
+        });
+
+        // Top hit + function/method → add an impact step as the next call,
+        // to surface caller blast-radius before any change to the contract.
+        if i == 0
+            && matches!(h.kind, ChunkKind::Function | ChunkKind::Method)
+            && steps.len() < max
+            && seen_targets.insert(format!("__impact__{}", h.symbol))
+        {
+            steps.push(PlanStep {
+                tool: "impact",
+                target: h.symbol.clone(),
+                reason: "top probe hit — see who depends on this before changing the contract"
+                    .to_string(),
+                source: h.clone(),
+            });
+        }
+    }
+
+    steps
+}
+
+fn recommend_tool(h: &SearchHit) -> (&'static str, String) {
+    let size = h.end_line.saturating_sub(h.start_line);
+    match h.kind {
+        ChunkKind::Function | ChunkKind::Method => {
+            if size > 40 {
+                (
+                    "peek",
+                    "large function — peek returns signature + direct callees without paying for the body".to_string(),
+                )
+            } else {
+                (
+                    "symbol",
+                    "small function — full body fits within a tight token budget".to_string(),
+                )
+            }
+        }
+        ChunkKind::Struct | ChunkKind::Enum => {
+            ("symbol", "type definition — read the shape before any usage site".to_string())
+        }
+        ChunkKind::Class => {
+            ("symbol", "class definition — see the methods at the same time as the structure".to_string())
+        }
+        ChunkKind::Impl | ChunkKind::Trait => {
+            ("symbol", "method / contract surface — read in one shot".to_string())
+        }
+        ChunkKind::Module => {
+            ("read", "module-level chunk — outline the file to see every symbol".to_string())
+        }
     }
 }
 
@@ -1241,5 +1441,72 @@ pub fn validate_token(token: &str) -> bool {
         let deps = idx.deps("src/main.go");
         let fmt_dep = deps.iter().find(|d| d.raw == "fmt").expect("fmt missing");
         assert!(fmt_dep.resolved.is_none(), "fmt should not resolve to a repo file");
+    }
+
+    #[test]
+    fn plan_empty_index_returns_low_confidence_with_broaden_hint() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let plan = idx.plan("fix the auth bug", 5).unwrap();
+        assert_eq!(plan.confidence, PlanConfidence::Low);
+        assert!(plan.steps.is_empty());
+        assert!(plan.broaden.is_some(), "expected broaden hint");
+    }
+
+    #[test]
+    fn plan_recommends_symbol_for_small_function() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [(
+            "src/auth.ts",
+            "function validateToken(t: string) {\n  return t.length > 0;\n}\n",
+        )];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let plan = idx.plan("validate token", 3).unwrap();
+        assert!(!plan.steps.is_empty(), "expected at least one step");
+        let first = &plan.steps[0];
+        // Top hit is the function — recommend `symbol` (small body fits).
+        assert_eq!(first.tool, "symbol");
+        assert_eq!(first.target, "validateToken");
+    }
+
+    #[test]
+    fn plan_adds_impact_followup_for_top_function() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [(
+            "src/auth.ts",
+            "function validateToken(t: string) {\n  return t.length > 0;\n}\n",
+        )];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let plan = idx.plan("validate token", 5).unwrap();
+        // The top hit is a function, so an `impact` follow-up should be
+        // included so the agent sees the blast radius before refactoring.
+        let has_impact = plan
+            .steps
+            .iter()
+            .any(|s| s.tool == "impact" && s.target == "validateToken");
+        assert!(has_impact, "expected an impact step on the top function");
+    }
+
+    #[test]
+    fn plan_collapses_multi_chunk_file_to_one_read() {
+        let idx = PluckIndex::in_ram().unwrap();
+        // Two functions in the same file. The probe matches both — the plan
+        // should emit one `read` step instead of two separate calls.
+        let files = [(
+            "src/handlers.ts",
+            r#"
+function authenticate(token: string) { return true; }
+function authorize(user: string) { return true; }
+"#,
+        )];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let plan = idx.plan("authenticate authorize", 5).unwrap();
+        let read_steps: Vec<&PlanStep> =
+            plan.steps.iter().filter(|s| s.tool == "read").collect();
+        // One read step covering the whole file.
+        assert_eq!(read_steps.len(), 1, "expected one read step, got {:?}", plan.steps);
+        assert_eq!(read_steps[0].target, "src/handlers.ts");
     }
 }
