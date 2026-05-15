@@ -62,3 +62,7 @@ harness = false
 [[bench]]
 name = "hybrid"
 harness = false
+
+[[bench]]
+name = "recall"
+harness = false

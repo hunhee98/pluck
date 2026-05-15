@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use pluck_core::chunker::{chunk_source, Language};
 use pluck_core::index::PluckIndex;
-use pluck_core::semantic::{StaticEncoder, DEFAULT_MODEL_ID};
+use pluck_core::semantic::{selected_model_id, StaticEncoder, DEFAULT_MODEL_ID};
 
 /// (label, source_lines, target_symbol) — the target is the chunk we
 /// expect the search to surface. Each source intentionally omits the
@@ -90,63 +90,76 @@ fn fmt_rank(r: Option<usize>) -> String {
 
 fn main() {
     if std::env::var("PLUCK_RUN_MODEL_TESTS").is_err() {
-        eprintln!(
-            "Skipped — set PLUCK_RUN_MODEL_TESTS=1 to download the embedding model and run."
-        );
+        eprintln!("Skipped — set PLUCK_RUN_MODEL_TESTS=1 to download the embedding model and run.");
         return;
     }
 
-    let enc = Arc::new(
-        StaticEncoder::load_or_fetch(DEFAULT_MODEL_ID)
-            .expect("load embedding model"),
-    );
+    let mut models = vec![selected_model_id()];
+    let trial = "minishlab/potion-retrieval-32M".to_string();
+    if !models.iter().any(|model| model == &trial) {
+        models.push(trial);
+    }
 
-    let idx = PluckIndex::in_ram()
-        .expect("in_ram")
-        .with_encoder(Arc::clone(&enc));
+    for model_id in models {
+        let Ok(enc) = StaticEncoder::load_or_fetch(&model_id) else {
+            eprintln!("Skipped model `{model_id}` — could not load as model2vec safetensors.");
+            continue;
+        };
+        let enc = Arc::new(enc);
 
-    let fx = fixtures();
-    {
-        let mut w = idx.writer().expect("writer");
-        for (path, src, _target) in &fx {
-            for c in chunk_source(src, Language::TypeScript).unwrap() {
-                w.add_chunk(path, &c).expect("add_chunk");
+        let idx = PluckIndex::in_ram()
+            .expect("in_ram")
+            .with_encoder(Arc::clone(&enc));
+
+        let fx = fixtures();
+        {
+            let mut w = idx.writer().expect("writer");
+            for (path, src, _target) in &fx {
+                for c in chunk_source(src, Language::TypeScript).unwrap() {
+                    w.add_chunk(path, &c).expect("add_chunk");
+                }
             }
+            w.commit().expect("commit");
         }
-        w.commit().expect("commit");
-    }
 
-    println!();
-    println!("| Query | Target | BM25 rank | Hybrid rank |");
-    println!("|-------|--------|----------:|------------:|");
+        println!();
+        println!("model: `{model_id}`");
+        println!();
+        println!("| Query | Target | BM25 rank | Hybrid rank |");
+        println!("|-------|--------|----------:|------------:|");
 
-    let mut bm25_hits = 0;
-    let mut hybrid_hits = 0;
-    let queries = queries();
-    let total = queries.len();
+        let mut bm25_hits = 0;
+        let mut hybrid_hits = 0;
+        let queries = queries();
+        let total = queries.len();
 
-    for (q, target) in &queries {
-        let bm25 = idx.search_with_cutoff(q, 10, 0.0).unwrap_or_default();
-        let hybrid = idx.search_hybrid(q, 10, 0.0).unwrap_or_default();
-        let br = rank_of(&bm25, target);
-        let hr = rank_of(&hybrid, target);
-        if br.is_some() {
-            bm25_hits += 1;
+        for (q, target) in &queries {
+            let bm25 = idx.search_with_cutoff(q, 10, 0.0).unwrap_or_default();
+            let hybrid = idx.search_hybrid(q, 10, 0.0, None).unwrap_or_default();
+            let br = rank_of(&bm25, target);
+            let hr = rank_of(&hybrid, target);
+            if br.is_some() {
+                bm25_hits += 1;
+            }
+            if hr.is_some() {
+                hybrid_hits += 1;
+            }
+            println!(
+                "| `{q}` | `{target}` | {} | {} |",
+                fmt_rank(br),
+                fmt_rank(hr)
+            );
         }
-        if hr.is_some() {
-            hybrid_hits += 1;
-        }
+
+        println!();
         println!(
-            "| `{q}` | `{target}` | {} | {} |",
-            fmt_rank(br),
-            fmt_rank(hr)
+            "Recall@10 — BM25-only: {}/{}, hybrid: {}/{}",
+            bm25_hits, total, hybrid_hits, total
         );
+        println!();
     }
 
-    println!();
-    println!(
-        "Recall@10 — BM25-only: {}/{}, hybrid: {}/{}",
-        bm25_hits, total, hybrid_hits, total
-    );
-    println!();
+    if DEFAULT_MODEL_ID != selected_model_id() {
+        eprintln!("Default model remains `{DEFAULT_MODEL_ID}`.");
+    }
 }
