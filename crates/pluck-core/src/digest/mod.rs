@@ -50,8 +50,8 @@ pub fn digest(input: &str, format: Option<Format>) -> DigestOutput {
         Format::Cargo => handlers::cargo::digest(input),
         Format::NpmFamily => handlers::npm::digest(input),
         Format::Pytest => handlers::pytest::digest(input),
-        // GHA handler lands in the next commit.
-        Format::GitHubActions | Format::Unknown => input.to_string(),
+        Format::GitHubActions => handlers::gha::digest(input),
+        Format::Unknown => input.to_string(),
     };
     DigestOutput {
         format: fmt,

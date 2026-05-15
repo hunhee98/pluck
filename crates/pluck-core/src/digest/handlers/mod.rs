@@ -7,5 +7,6 @@
 //! (file:line:col, traceback, panic stack, failed-step body).
 
 pub mod cargo;
+pub mod gha;
 pub mod npm;
 pub mod pytest;
