@@ -31,6 +31,7 @@
 //! with `Format::Unknown`.
 
 mod format;
+mod handlers;
 
 pub use format::{detect, Format};
 
@@ -46,12 +47,13 @@ pub use format::{detect, Format};
 pub fn digest(input: &str, format: Option<Format>) -> DigestOutput {
     let fmt = format.unwrap_or_else(|| detect(input));
     let text = match fmt {
-        Format::Unknown => input.to_string(),
-        // Handlers land in subsequent commits; for now every known
-        // format passes through. The scaffolding commits the API
-        // shape so CLI/MCP wiring can land in parallel without
-        // waiting for every handler.
-        _ => input.to_string(),
+        Format::Cargo => handlers::cargo::digest(input),
+        // npm / pytest / GHA handlers land in subsequent commits.
+        // Until then, those known formats pass through verbatim so
+        // CLI/MCP wiring already accepts them as valid format names.
+        Format::NpmFamily | Format::Pytest | Format::GitHubActions | Format::Unknown => {
+            input.to_string()
+        }
     };
     DigestOutput {
         format: fmt,
