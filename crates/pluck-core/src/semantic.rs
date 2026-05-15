@@ -27,6 +27,19 @@ use crate::store::pluck_root;
 /// Default Hugging Face model id pluck embeds with.
 pub const DEFAULT_MODEL_ID: &str = "minishlab/potion-code-16M";
 
+/// Model id selected for this process.
+///
+/// `DEFAULT_MODEL_ID` remains the stable default; `PLUCK_EMBED_MODEL`
+/// is an escape hatch for quality experiments such as retrieval-tuned
+/// model2vec variants.
+pub fn selected_model_id() -> String {
+    std::env::var("PLUCK_EMBED_MODEL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string())
+}
+
 /// Static (lookup-based) embedding encoder.
 ///
 /// Holds the embedding matrix in memory as a flat `Vec<f32>` (row-major,
@@ -69,10 +82,7 @@ impl StaticEncoder {
         let tensor = st.tensor(name).unwrap();
 
         if tensor.dtype() != safetensors::Dtype::F32 {
-            return Err(anyhow!(
-                "expected f32 embeddings, got {:?}",
-                tensor.dtype()
-            ));
+            return Err(anyhow!("expected f32 embeddings, got {:?}", tensor.dtype()));
         }
         let shape = tensor.shape();
         if shape.len() != 2 {
@@ -83,9 +93,7 @@ impl StaticEncoder {
         let raw = tensor.data();
         let mut embeddings = Vec::with_capacity(vocab_size * dim);
         for chunk in raw.chunks_exact(4) {
-            embeddings.push(f32::from_le_bytes([
-                chunk[0], chunk[1], chunk[2], chunk[3],
-            ]));
+            embeddings.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
         }
 
         Ok(Self {
@@ -262,6 +270,14 @@ mod tests {
         assert!((len - 1.0).abs() < 1e-5);
     }
 
+    #[test]
+    fn selected_model_id_uses_env_override() {
+        std::env::set_var("PLUCK_EMBED_MODEL", "minishlab/potion-retrieval-32M");
+        assert_eq!(selected_model_id(), "minishlab/potion-retrieval-32M");
+        std::env::remove_var("PLUCK_EMBED_MODEL");
+        assert_eq!(selected_model_id(), DEFAULT_MODEL_ID);
+    }
+
     /// End-to-end against the real model. Network-dependent and slow on
     /// the first run (downloads ~60 MB); cached afterwards. Gated by an
     /// env var so CI doesn't hit Hugging Face on every push.
@@ -270,7 +286,7 @@ mod tests {
         if std::env::var("PLUCK_RUN_MODEL_TESTS").is_err() {
             return;
         }
-        let enc = StaticEncoder::load_or_fetch(DEFAULT_MODEL_ID).expect("load model");
+        let enc = StaticEncoder::load_or_fetch(&selected_model_id()).expect("load model");
         assert!(enc.dim() > 0);
         assert!(enc.vocab_size() > 0);
 

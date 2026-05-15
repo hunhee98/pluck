@@ -2,7 +2,9 @@
 //!
 //! Each chunk produced by the AST chunker becomes one tantivy document.
 //! The `symbol`, `signature`, and `content` fields participate in the
-//! default BM25 scoring; everything else is stored only for retrieval.
+//! default BM25 scoring. Hybrid search additionally lets the BM25 side
+//! see `doc_comment` so natural-language queries can use API prose
+//! without changing BM25-only behavior.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -29,13 +31,13 @@ use crate::tokenizer::{PluckTokenizer, TOKENIZER_NAME};
 ///
 /// Standard structured-doc IR move: symbol matches dominate (the user
 /// usually means the function they named), signature next (carries the
-/// type + param names — semantic-dense per byte), content last (longest
-/// field, BM25's IDF already favors rare tokens here). The 5 / 3 / 1
-/// ratio matches the values typical BM25F implementations and the bm25s tutorial both
-/// settle on; we keep them as constants so a future per-query tuner
-/// can override.
+/// type + param names — semantic-dense per byte), doc comments next
+/// for hybrid NL queries, content last (longest field, BM25's IDF
+/// already favors rare tokens here). Plain BM25 keeps the historical
+/// 5 / 3 / 1 ratio; hybrid adds doc comments at 4.
 const BM25F_BOOST_SYMBOL: f32 = 5.0;
 const BM25F_BOOST_SIGNATURE: f32 = 3.0;
+const BM25F_BOOST_DOC_COMMENT: f32 = 4.0;
 const BM25F_BOOST_CONTENT: f32 = 1.0;
 
 const WRITER_HEAP_BYTES: usize = 50_000_000;
@@ -44,10 +46,11 @@ pub struct PluckIndex {
     inner: TantivyIndex,
     fields: Fields,
     /// Optional static encoder. When present, `add_chunk` auto-encodes
-    /// each chunk's signature + content and `search_hybrid` fuses BM25
-    /// with cosine similarity. When absent, the index degrades cleanly
-    /// to BM25-only — every existing call site keeps working without
-    /// the network/disk cost of loading the embedding model.
+    /// each chunk's doc-comment + signature + content and
+    /// `search_hybrid` fuses BM25 with cosine similarity. When absent,
+    /// the index degrades cleanly to BM25-only — every existing call
+    /// site keeps working without the network/disk cost of loading the
+    /// embedding model.
     encoder: Option<Arc<StaticEncoder>>,
     /// chunk_id → embedding vector. Populated only when `encoder` is set.
     /// RwLock so reads (search) don't block other reads.
@@ -62,6 +65,7 @@ struct Fields {
     kind: Field,
     start_line: Field,
     end_line: Field,
+    doc_comment: Field,
     signature: Field,
     content: Field,
 }
@@ -86,6 +90,7 @@ fn build_schema() -> (Schema, Fields) {
     let kind = sb.add_text_field("kind", STRING | STORED);
     let start_line = sb.add_u64_field("start_line", STORED);
     let end_line = sb.add_u64_field("end_line", STORED);
+    let doc_comment = sb.add_text_field("doc_comment", pluck_text_field());
     let signature = sb.add_text_field("signature", pluck_text_field());
     let content = sb.add_text_field("content", pluck_text_field());
     let schema = sb.build();
@@ -98,6 +103,7 @@ fn build_schema() -> (Schema, Fields) {
             kind,
             start_line,
             end_line,
+            doc_comment,
             signature,
             content,
         },
@@ -175,17 +181,17 @@ impl PluckIndex {
     /// is BM25's own field-by-field accumulator — tantivy's
     /// QueryParser distributes the parsed query across each field and
     /// multiplies the per-field score by the boost we set here.
-    fn bm25f_query_parser(&self) -> QueryParser {
-        let mut qp = QueryParser::for_index(
-            &self.inner,
-            vec![
-                self.fields.symbol,
-                self.fields.signature,
-                self.fields.content,
-            ],
-        );
+    fn bm25f_query_parser(&self, include_doc_comment: bool) -> QueryParser {
+        let mut fields = vec![self.fields.symbol, self.fields.signature, self.fields.content];
+        if include_doc_comment {
+            fields.push(self.fields.doc_comment);
+        }
+        let mut qp = QueryParser::for_index(&self.inner, fields);
         qp.set_field_boost(self.fields.symbol, BM25F_BOOST_SYMBOL);
         qp.set_field_boost(self.fields.signature, BM25F_BOOST_SIGNATURE);
+        if include_doc_comment {
+            qp.set_field_boost(self.fields.doc_comment, BM25F_BOOST_DOC_COMMENT);
+        }
         qp.set_field_boost(self.fields.content, BM25F_BOOST_CONTENT);
         qp
     }
@@ -235,9 +241,19 @@ impl PluckIndex {
         k: usize,
         cutoff_frac: f32,
     ) -> Result<Vec<SearchHit>> {
+        self.search_with_cutoff_inner(query_str, k, cutoff_frac, false)
+    }
+
+    fn search_with_cutoff_inner(
+        &self,
+        query_str: &str,
+        k: usize,
+        cutoff_frac: f32,
+        include_doc_comment: bool,
+    ) -> Result<Vec<SearchHit>> {
         let reader = self.inner.reader().context("open reader")?;
         let searcher = reader.searcher();
-        let qp = self.bm25f_query_parser();
+        let qp = self.bm25f_query_parser(include_doc_comment);
         let query = qp.parse_query(query_str).context("parse query")?;
         let top = searcher
             .search(&query, &TopDocs::with_limit(k).order_by_score())
@@ -274,6 +290,7 @@ impl PluckIndex {
         query_str: &str,
         k: usize,
         cutoff_frac: f32,
+        alpha: Option<f32>,
     ) -> Result<Vec<SearchHit>> {
         const RRF_K: f32 = 60.0;
         const OVERFETCH: usize = 5;
@@ -283,9 +300,13 @@ impl PluckIndex {
         };
 
         let candidate_k = (k * OVERFETCH).max(20);
+        let semantic_alpha = alpha
+            .unwrap_or_else(|| inferred_rrf_alpha(query_str))
+            .clamp(0.0, 1.0);
+        let bm25_alpha = 1.0 - semantic_alpha;
 
         // BM25 side.
-        let bm25 = self.search_with_cutoff(query_str, candidate_k, 0.0)?;
+        let bm25 = self.search_with_cutoff_inner(query_str, candidate_k, 0.0, true)?;
 
         // Semantic side: encode the query, then score it against *every*
         // chunk that has an embedding. Without this, queries whose terms
@@ -325,19 +346,20 @@ impl PluckIndex {
             }
         }
 
-        // RRF fusion. Both rankings contribute 1 / (RRF_K + rank); the
-        // BM25 ranking comes in by order of the `bm25` Vec (already
-        // sorted by score descending), the semantic ranking by `sem`.
+        // Weighted RRF fusion. For identifier-like queries BM25 and
+        // semantic stay balanced. Natural-language queries get a
+        // semantic-heavy alpha so prose-aligned hits are not drowned by
+        // lexical noise from large real repos.
         let mut rrf: HashMap<u64, (SearchHit, f32)> = HashMap::with_capacity(candidate_k);
 
         for (rank, hit) in bm25.iter().enumerate() {
-            let bonus = 1.0 / (RRF_K + rank as f32 + 1.0);
+            let bonus = bm25_alpha / (RRF_K + rank as f32 + 1.0);
             rrf.entry(hit.chunk_id)
                 .and_modify(|(_, s)| *s += bonus)
                 .or_insert_with(|| (hit.clone(), bonus));
         }
         for (rank, (hit, _cos)) in sem.iter().enumerate() {
-            let bonus = 1.0 / (RRF_K + rank as f32 + 1.0);
+            let bonus = semantic_alpha / (RRF_K + rank as f32 + 1.0);
             rrf.entry(hit.chunk_id)
                 .and_modify(|(_, s)| *s += bonus)
                 .or_insert_with(|| (hit.clone(), bonus));
@@ -381,6 +403,36 @@ impl PluckIndex {
     }
 }
 
+fn inferred_rrf_alpha(query: &str) -> f32 {
+    if is_natural_language_query(query) {
+        0.7
+    } else {
+        0.5
+    }
+}
+
+fn is_natural_language_query(query: &str) -> bool {
+    let tokens: Vec<&str> = query.split_whitespace().collect();
+    tokens.len() >= 3 && query.contains(char::is_whitespace) && !has_identifier_pattern(&tokens)
+}
+
+fn has_identifier_pattern(tokens: &[&str]) -> bool {
+    tokens.iter().any(|token| {
+        token.contains("::")
+            || token.contains('_')
+            || token.contains('/')
+            || token.contains('.')
+            || token.chars().any(|c| c.is_ascii_digit())
+            || has_camel_case_shape(token)
+    })
+}
+
+fn has_camel_case_shape(token: &str) -> bool {
+    let has_lower = token.chars().any(|c| c.is_ascii_lowercase());
+    let has_upper = token.chars().any(|c| c.is_ascii_uppercase());
+    has_lower && has_upper
+}
+
 pub struct IndexBatch {
     writer: IndexWriter,
     fields: Fields,
@@ -401,22 +453,20 @@ impl IndexBatch {
                 self.fields.kind => kind_str(&c.kind),
                 self.fields.start_line => c.start_line as u64,
                 self.fields.end_line => c.end_line as u64,
+                self.fields.doc_comment => c.doc_comment.as_str(),
                 self.fields.signature => c.signature.as_str(),
                 self.fields.content => c.content.as_str(),
             ))
             .context("add_document")?;
 
-        // If an encoder is attached, embed `symbol + signature + content`
-        // so the vector captures both the interface and the body. The
-        // encoder is allowed to fail silently — we degrade to BM25-only
-        // for that chunk rather than aborting the whole indexing pass.
+        // If an encoder is attached, embed
+        // `doc_comment + symbol + signature + content` so prose API docs
+        // can carry natural-language queries toward the right chunk.
+        // The encoder is allowed to fail silently — we degrade to
+        // BM25-only for that chunk rather than aborting the whole
+        // indexing pass.
         if let Some(enc) = &self.encoder {
-            let mut text = String::with_capacity(c.symbol.len() + c.signature.len() + c.content.len() + 2);
-            text.push_str(&c.symbol);
-            text.push('\n');
-            text.push_str(&c.signature);
-            text.push('\n');
-            text.push_str(&c.content);
+            let text = embedding_text(c);
             match enc.encode(&text) {
                 Ok(v) => {
                     if let Ok(mut map) = self.embeddings.write() {
@@ -445,6 +495,20 @@ impl IndexBatch {
         let term = Term::from_field_text(self.fields.path, rel_path);
         self.writer.delete_term(term)
     }
+}
+
+fn embedding_text(c: &Chunk) -> String {
+    let mut text = String::with_capacity(
+        c.doc_comment.len() + c.symbol.len() + c.signature.len() + c.content.len() + 3,
+    );
+    text.push_str(&c.doc_comment);
+    text.push('\n');
+    text.push_str(&c.symbol);
+    text.push('\n');
+    text.push_str(&c.signature);
+    text.push('\n');
+    text.push_str(&c.content);
+    text
 }
 
 #[derive(Debug, Clone)]
@@ -563,10 +627,34 @@ function unrelatedHelper(): void {}
         let idx = index_one_file(src, "auth.ts", Language::TypeScript);
         assert!(!idx.has_encoder());
         let h1 = idx.search_with_cutoff("validateToken", 5, 0.0).unwrap();
-        let h2 = idx.search_hybrid("validateToken", 5, 0.0).unwrap();
+        let h2 = idx.search_hybrid("validateToken", 5, 0.0, None).unwrap();
         assert_eq!(h1.len(), h2.len());
         assert!(!h1.is_empty());
         assert_eq!(h1[0].symbol, h2[0].symbol);
+    }
+
+    #[test]
+    fn rrf_alpha_prefers_semantic_for_natural_language_queries() {
+        assert_eq!(
+            inferred_rrf_alpha("receive value from channel asynchronously"),
+            0.7
+        );
+        assert_eq!(inferred_rrf_alpha("Runtime::spawn future"), 0.5);
+        assert_eq!(inferred_rrf_alpha("validateToken"), 0.5);
+    }
+
+    #[test]
+    fn embedding_text_includes_doc_comment_before_code() {
+        let src = r#"
+/// Receive a value from an asynchronous channel.
+pub async fn recv_value() -> Option<u8> {
+    Some(1)
+}
+"#;
+        let chunks = chunk_source(src, Language::Rust).unwrap();
+        let text = embedding_text(&chunks[0]);
+        assert!(text.starts_with("Receive a value from an asynchronous channel."));
+        assert!(text.contains("recv_value"));
     }
 
     /// Real model + hybrid search. Gated — same env var as the encoder
@@ -578,10 +666,8 @@ function unrelatedHelper(): void {}
             return;
         }
         let enc = std::sync::Arc::new(
-            crate::semantic::StaticEncoder::load_or_fetch(
-                crate::semantic::DEFAULT_MODEL_ID,
-            )
-            .expect("load encoder"),
+            crate::semantic::StaticEncoder::load_or_fetch(&crate::semantic::selected_model_id())
+                .expect("load encoder"),
         );
         let idx = PluckIndex::in_ram().unwrap().with_encoder(enc);
         let mut w = idx.writer().unwrap();
@@ -608,7 +694,7 @@ function formatAuthErrorLine(line: string): string {
         w.commit().unwrap();
 
         let hits = idx
-            .search_hybrid("user login authentication", 5, 0.0)
+            .search_hybrid("user login authentication", 5, 0.0, None)
             .unwrap();
         // Both should surface; the hybrid order is what we care about.
         // Whichever the test prefers, semantic + BM25 fusion must produce
@@ -671,7 +757,8 @@ function dispatchByName(name: string): void {
         let hits = idx.search_with_cutoff("handleLogin", 5, 0.0).unwrap();
         assert!(!hits.is_empty(), "expected hits");
         assert_eq!(
-            hits[0].symbol, "handleLogin",
+            hits[0].symbol,
+            "handleLogin",
             "BM25F must rank the symbol-match above the body-mention; got: {:?}",
             hits.iter().map(|h| &h.symbol).collect::<Vec<_>>()
         );

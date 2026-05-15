@@ -41,6 +41,8 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
     let mut cursor = QueryCursor::new();
     let matches = cursor.matches(&query, tree.root_node(), src.as_bytes());
 
+    let lines: Vec<&str> = src.lines().collect();
+
     let mut chunks: Vec<Chunk> = Vec::new();
     // deduplicate: same start byte can appear when a node matches multiple patterns
     let mut seen: HashSet<usize> = HashSet::new();
@@ -80,6 +82,7 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
 
         // 1 copy of the source slice into owned content
         let content = src[start_byte..end_byte].to_string();
+        let doc_comment = leading_doc_comment(&lines, lang, node.start_position().row, &content);
 
         // signature = node text up to the `body` field's start (if present),
         // so multi-line parameter lists are captured intact. Falls back to
@@ -98,12 +101,180 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
             end_line: node.end_position().row as u32 + 1,
             start_byte: start_byte as u32,
             end_byte: end_byte as u32,
+            doc_comment,
             content,
             signature,
         });
     }
 
     Ok(chunks)
+}
+
+fn leading_doc_comment(lines: &[&str], lang: Language, start_row: usize, content: &str) -> String {
+    let mut row = start_row;
+    let mut collected: Vec<String> = Vec::new();
+
+    while row > 0 {
+        let line = lines[row - 1].trim();
+        if line.is_empty() {
+            break;
+        }
+
+        if lang == Language::Rust && line.starts_with("#[") {
+            row -= 1;
+            continue;
+        }
+
+        if let Some(cleaned) = clean_line_doc(lang, line) {
+            collected.push(cleaned);
+            row -= 1;
+            continue;
+        }
+
+        if line.ends_with("*/") {
+            let (block, next_row) = collect_block_doc(&lines, row - 1);
+            if !block.is_empty() {
+                collected.extend(block.into_iter().rev());
+                row = next_row;
+                continue;
+            }
+        }
+
+        break;
+    }
+
+    collected.reverse();
+    let mut doc = collected
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if doc.is_empty() {
+        doc = leading_doc_in_content(content, lang).unwrap_or_default();
+    }
+
+    if doc.is_empty() && lang == Language::Python {
+        doc = python_docstring(content).unwrap_or_default();
+    }
+
+    doc
+}
+
+fn leading_doc_in_content(content: &str, lang: Language) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut row = 0;
+    let mut out = Vec::new();
+
+    while row < lines.len() {
+        let line = lines[row].trim();
+        if line.is_empty() {
+            row += 1;
+            continue;
+        }
+        if let Some(cleaned) = clean_line_doc(lang, line) {
+            out.push(cleaned);
+            row += 1;
+            continue;
+        }
+        if line.starts_with("/**") || line.starts_with("/*") {
+            loop {
+                let cleaned = lines[row]
+                    .trim()
+                    .trim_start_matches("/**")
+                    .trim_start_matches("/*")
+                    .trim_end_matches("*/")
+                    .trim_start_matches('*')
+                    .trim()
+                    .to_string();
+                out.push(cleaned);
+                if lines[row].trim().ends_with("*/") {
+                    break;
+                }
+                row += 1;
+                if row >= lines.len() {
+                    break;
+                }
+            }
+        }
+        break;
+    }
+
+    let doc = out
+        .into_iter()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!doc.is_empty()).then_some(doc)
+}
+
+fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
+    match lang {
+        Language::Rust => line
+            .strip_prefix("///")
+            .or_else(|| line.strip_prefix("//!"))
+            .map(|s| s.trim().to_string()),
+        Language::TypeScript | Language::JavaScript | Language::Go => {
+            line.strip_prefix("//").map(|s| s.trim().to_string())
+        }
+        Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
+    }
+}
+
+fn collect_block_doc(lines: &[&str], mut row: usize) -> (Vec<String>, usize) {
+    let mut out = Vec::new();
+    loop {
+        let line = lines[row].trim();
+        let cleaned = line
+            .trim_start_matches("/**")
+            .trim_start_matches("/*")
+            .trim_end_matches("*/")
+            .trim_start_matches('*')
+            .trim()
+            .to_string();
+        out.push(cleaned);
+
+        if line.starts_with("/**") || line.starts_with("/*") || row == 0 {
+            return (out, row);
+        }
+        row -= 1;
+    }
+}
+
+fn python_docstring(content: &str) -> Option<String> {
+    let mut lines = content.lines().skip(1);
+    let first = lines.find(|line| !line.trim().is_empty())?.trim();
+    let quote = if first.starts_with("\"\"\"") {
+        "\"\"\""
+    } else if first.starts_with("'''") {
+        "'''"
+    } else {
+        return None;
+    };
+
+    let mut out = Vec::new();
+    let rest = first.trim_start_matches(quote);
+    if let Some((body, _)) = rest.split_once(quote) {
+        out.push(body.trim().to_string());
+        return Some(out.join("\n"));
+    }
+    out.push(rest.trim().to_string());
+
+    for line in lines {
+        let trimmed = line.trim();
+        if let Some((body, _)) = trimmed.split_once(quote) {
+            out.push(body.trim().to_string());
+            break;
+        }
+        out.push(trimmed.to_string());
+    }
+
+    Some(
+        out.into_iter()
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
 }
 
 fn kind_from_prefix(prefix: &str) -> ChunkKind {
@@ -303,6 +474,53 @@ enum Direction {
         assert_eq!(chunks.len(), 1);
         let c = &chunks[0];
         assert_eq!(&src[c.start_byte as usize..c.end_byte as usize], c.content);
+    }
+
+    #[test]
+    fn test_doc_comment_extracted_for_rust_function() {
+        let src = r#"
+/// Receives a queued value without blocking the executor.
+#[track_caller]
+pub async fn recv_value() -> Option<u8> {
+    Some(1)
+}
+"#;
+        let chunks = chunk_source(src, Language::Rust).unwrap();
+        let c = chunks.iter().find(|c| c.symbol == "recv_value").unwrap();
+        assert_eq!(
+            c.doc_comment,
+            "Receives a queued value without blocking the executor."
+        );
+    }
+
+    #[test]
+    fn test_doc_comment_extracted_for_js_block() {
+        let src = r#"
+/**
+ * Parse a webhook payload into an event.
+ */
+function decodeWebhook(body) {
+  return body;
+}
+"#;
+        let chunks = chunk_source(src, Language::JavaScript).unwrap();
+        let c = chunks.iter().find(|c| c.symbol == "decodeWebhook").unwrap();
+        assert_eq!(c.doc_comment, "Parse a webhook payload into an event.");
+    }
+
+    #[test]
+    fn test_python_docstring_extracted() {
+        let src = r#"
+def normalize_email(value: str) -> str:
+    """Normalize an email address before lookup."""
+    return value.strip().lower()
+"#;
+        let chunks = chunk_source(src, Language::Python).unwrap();
+        let c = chunks
+            .iter()
+            .find(|c| c.symbol == "normalize_email")
+            .unwrap();
+        assert_eq!(c.doc_comment, "Normalize an email address before lookup.");
     }
 
     // ── Rust ──────────────────────────────────────────────────────────────

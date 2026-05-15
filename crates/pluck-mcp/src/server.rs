@@ -24,7 +24,7 @@ use pluck_core::chunker::Language;
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
 use pluck_core::outliner::{outline_source, render as render_outline};
-use pluck_core::semantic::{StaticEncoder, DEFAULT_MODEL_ID};
+use pluck_core::semantic::{selected_model_id, StaticEncoder};
 use pluck_core::watcher::{spawn_watcher, WatcherHandle, DEFAULT_DEBOUNCE};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -79,10 +79,11 @@ impl PluckServer {
             tracing::info!("PLUCK_DISABLE_EMBEDDINGS set; running BM25-only");
             None
         } else {
-            match StaticEncoder::load_or_fetch(DEFAULT_MODEL_ID) {
+            let model_id = selected_model_id();
+            match StaticEncoder::load_or_fetch(&model_id) {
                 Ok(enc) => {
                     tracing::info!(
-                        model = DEFAULT_MODEL_ID,
+                        model = model_id,
                         dim = enc.dim(),
                         "embedding encoder loaded; hybrid search active"
                     );
@@ -301,7 +302,7 @@ impl PluckServer {
         let hits = self
             .inner
             .index
-            .search_hybrid(&p.query, p.top_k, 0.12)
+            .search_hybrid(&p.query, p.top_k, 0.12, None)
             .map_err(|e| McpError::internal_error(format!("search failed: {e}"), None))?;
         if hits.is_empty() {
             return Ok("(no hits)\n".to_string());

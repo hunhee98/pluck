@@ -20,6 +20,7 @@ pub struct Chunk {
     pub end_line: u32,
     pub start_byte: u32,
     pub end_byte: u32,
+    pub doc_comment: String,
     pub content: String,
     pub signature: String,
 }
