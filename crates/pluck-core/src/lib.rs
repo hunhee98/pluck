@@ -13,8 +13,8 @@ pub mod outliner;
 pub mod ranking;
 pub mod semantic;
 pub mod store;
-pub mod tokenizer;
 pub mod symbols;
+pub mod tokenizer;
 pub mod watcher;
 
 /// Crate version string from Cargo.

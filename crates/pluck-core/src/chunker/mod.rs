@@ -132,7 +132,7 @@ fn leading_doc_comment(lines: &[&str], lang: Language, start_row: usize, content
         }
 
         if line.ends_with("*/") {
-            let (block, next_row) = collect_block_doc(&lines, row - 1);
+            let (block, next_row) = collect_block_doc(lines, row - 1);
             if !block.is_empty() {
                 collected.extend(block.into_iter().rev());
                 row = next_row;

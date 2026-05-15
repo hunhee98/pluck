@@ -56,4 +56,3 @@ fn count_tokens(bpe: &CoreBPE, s: &str) -> Result<usize> {
 pub fn bpe() -> Result<CoreBPE> {
     tiktoken_rs::cl100k_base().context("load cl100k_base")
 }
-

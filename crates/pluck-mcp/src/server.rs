@@ -95,9 +95,7 @@ impl PluckServer {
                     Some(Arc::new(enc))
                 }
                 Err(e) => {
-                    tracing::warn!(
-                        "failed to load embedding model ({e}); running BM25-only"
-                    );
+                    tracing::warn!("failed to load embedding model ({e}); running BM25-only");
                     None
                 }
             }
@@ -270,9 +268,8 @@ impl PluckServer {
 
         // Stat first — we want a cheap, cat-shaped failure before
         // trying to buffer the whole file in memory.
-        let meta = std::fs::metadata(&path).map_err(|e| {
-            McpError::invalid_params(read_err(&p.path, &e), None)
-        })?;
+        let meta = std::fs::metadata(&path)
+            .map_err(|e| McpError::invalid_params(read_err(&p.path, &e), None))?;
         if meta.is_dir() {
             return Err(McpError::invalid_params(
                 format!("pluck.read: {}: is a directory", p.path),
@@ -295,9 +292,8 @@ impl PluckServer {
         // responses are JSON strings) and for the outliner. Binary
         // files trip a clean diagnostic; bash remains the right tool
         // for byte-level work.
-        let bytes = std::fs::read(&path).map_err(|e| {
-            McpError::invalid_params(read_err(&p.path, &e), None)
-        })?;
+        let bytes = std::fs::read(&path)
+            .map_err(|e| McpError::invalid_params(read_err(&p.path, &e), None))?;
         let src = match std::str::from_utf8(&bytes) {
             Ok(s) => s.to_string(),
             Err(_) => {
@@ -1027,7 +1023,10 @@ mod tests {
                 lines: None,
             }))
             .await;
-        let msg = format!("{:?}", res.expect_err("outside-repo absolute path must error"));
+        let msg = format!(
+            "{:?}",
+            res.expect_err("outside-repo absolute path must error")
+        );
         assert!(
             msg.contains("outside the indexed repo"),
             "expected boundary diagnostic, got: {msg}"

@@ -120,11 +120,7 @@ pub fn split_identifier(token: &str) -> Vec<String> {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_lowercase())
             .collect();
-        return if parts.len() >= 2 {
-            parts
-        } else {
-            Vec::new()
-        };
+        return if parts.len() >= 2 { parts } else { Vec::new() };
     }
 
     // Otherwise treat the token as camel / Pascal / acronym-friendly.

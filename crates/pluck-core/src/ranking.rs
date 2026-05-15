@@ -48,8 +48,9 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
         .split(|c: char| !c.is_alphanumeric() && c != '_')
         .filter(|s| !s.is_empty())
         .collect();
-    let query_mentions_tests =
-        q_tokens.iter().any(|t| *t == "test" || *t == "tests" || *t == "spec" || *t == "specs");
+    let query_mentions_tests = q_tokens
+        .iter()
+        .any(|t| *t == "test" || *t == "tests" || *t == "spec" || *t == "specs");
 
     // Count candidate chunks per file for the sibling-chunk boost.
     let mut chunks_per_file: HashMap<String, usize> = HashMap::new();
@@ -77,7 +78,11 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
         }
     }
 
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 }
 
 pub fn is_test_path(path: &str) -> bool {

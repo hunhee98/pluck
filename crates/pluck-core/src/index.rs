@@ -182,7 +182,11 @@ impl PluckIndex {
     /// QueryParser distributes the parsed query across each field and
     /// multiplies the per-field score by the boost we set here.
     fn bm25f_query_parser(&self, include_doc_comment: bool) -> QueryParser {
-        let mut fields = vec![self.fields.symbol, self.fields.signature, self.fields.content];
+        let mut fields = vec![
+            self.fields.symbol,
+            self.fields.signature,
+            self.fields.content,
+        ];
         if include_doc_comment {
             fields.push(self.fields.doc_comment);
         }

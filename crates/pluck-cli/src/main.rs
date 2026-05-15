@@ -121,7 +121,11 @@ fn main() -> Result<()> {
             compact,
             cutoff,
         } => cmd_search(&query, repo, top_k, compact, cutoff)?,
-        Command::Init { target, pluckd, repo } => cmd_init(target, pluckd, repo)?,
+        Command::Init {
+            target,
+            pluckd,
+            repo,
+        } => cmd_init(target, pluckd, repo)?,
     }
     Ok(())
 }
@@ -251,8 +255,7 @@ fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
         .insert("pluck".to_string(), entry);
 
     let body = serde_json::to_string_pretty(&doc).context("serialize .mcp.json")?;
-    std::fs::write(&target, body + "\n")
-        .with_context(|| format!("write {}", target.display()))?;
+    std::fs::write(&target, body + "\n").with_context(|| format!("write {}", target.display()))?;
 
     if already_correct {
         println!(
@@ -260,10 +263,7 @@ fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
             target.display()
         );
     } else if prev.is_some() {
-        println!(
-            "pluck init: updated `pluck` entry in {}",
-            target.display()
-        );
+        println!("pluck init: updated `pluck` entry in {}", target.display());
     } else {
         println!(
             "pluck init: registered `pluck` MCP server in {}",
@@ -280,11 +280,7 @@ fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
 /// re-run from a different repo replaces the previous entry's
 /// `--repo` arg in place. Format and comments outside the
 /// `mcp_servers.pluck` table are preserved via `toml_edit`.
-fn write_codex_config_toml(
-    config_path: &Path,
-    pluckd_path: &Path,
-    repo_path: &Path,
-) -> Result<()> {
+fn write_codex_config_toml(config_path: &Path, pluckd_path: &Path, repo_path: &Path) -> Result<()> {
     if !config_path.exists() {
         anyhow::bail!(
             "Codex config not found at {}. Install Codex first, then re-run `pluck init --target codex`.",
@@ -586,8 +582,7 @@ mod tests {
         let body = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
         let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(
-            doc["mcpServers"]["other"]["command"],
-            "/usr/local/bin/other",
+            doc["mcpServers"]["other"]["command"], "/usr/local/bin/other",
             "existing `other` server must survive"
         );
         assert_eq!(
@@ -625,9 +620,8 @@ mod tests {
     fn write_claude_mcp_json_rejects_corrupt_existing_file() {
         let tmp = tmp_dir("corrupt");
         std::fs::write(tmp.join(".mcp.json"), "{ this is not valid json").unwrap();
-        let err = write_claude_mcp_json(&PathBuf::from("/opt/pluckd"), &tmp).expect_err(
-            "corrupt existing .mcp.json must error, not silently overwrite",
-        );
+        let err = write_claude_mcp_json(&PathBuf::from("/opt/pluckd"), &tmp)
+            .expect_err("corrupt existing .mcp.json must error, not silently overwrite");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("not valid JSON"),
@@ -685,12 +679,9 @@ trust_level = "trusted"
     fn write_codex_config_toml_rejects_missing_file() {
         let tmp = tmp_dir("codex-missing");
         let cfg = tmp.join("does-not-exist.toml");
-        let err = write_codex_config_toml(
-            &cfg,
-            &PathBuf::from("/opt/pluckd"),
-            &PathBuf::from("/repo"),
-        )
-        .expect_err("missing Codex config must error, not silently create");
+        let err =
+            write_codex_config_toml(&cfg, &PathBuf::from("/opt/pluckd"), &PathBuf::from("/repo"))
+                .expect_err("missing Codex config must error, not silently create");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("Codex config not found"),
@@ -741,12 +732,9 @@ trust_level = "trusted"
         let tmp = tmp_dir("codex-corrupt");
         let cfg = tmp.join("config.toml");
         std::fs::write(&cfg, "not = valid = toml === bad").unwrap();
-        let err = write_codex_config_toml(
-            &cfg,
-            &PathBuf::from("/opt/pluckd"),
-            &PathBuf::from("/repo"),
-        )
-        .expect_err("corrupt TOML must error, not silently overwrite");
+        let err =
+            write_codex_config_toml(&cfg, &PathBuf::from("/opt/pluckd"), &PathBuf::from("/repo"))
+                .expect_err("corrupt TOML must error, not silently overwrite");
         let msg = format!("{err:?}");
         assert!(
             msg.contains("not valid TOML"),
@@ -767,7 +755,9 @@ trust_level = "trusted"
         std::fs::write(&f, "hello\nworld\n").unwrap();
         let result = cmd_read(&f, true, None);
         let _ = std::fs::remove_dir_all(&tmp);
-        assert!(result.is_ok(), "UTF-8 text must read clean, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "UTF-8 text must read clean, got: {result:?}"
+        );
     }
-
 }
