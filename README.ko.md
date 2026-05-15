@@ -26,7 +26,8 @@
 
 ```
 pluck 없이:  ls → grep → cat file1 → cat file2 → cat file3 → ...
-pluck 사용:  pluck.search "auth flow"            → BM25 + 시맨틱으로 랭킹된 청크
+pluck 사용:  pluck.plan "auth-token 만료 버그 수정" → 다음 3-5 retrieval 호출 추천
+             pluck.search "auth flow"            → BM25 + 시맨틱으로 랭킹된 청크
              pluck.peek validate_token           → 시그니처 + 호출 함수만
              pluck.symbol validate_token         → 해당 함수 본문만
              pluck.impact validate_token         → 모든 호출자, depth 제한
@@ -103,6 +104,7 @@ pluck은 Tree-sitter를 사용해 파일을 AST 단위로 청크화해요. 에�
 | `mcp__pluck__impact` | grep + 호출자마다 read | 역방향 호출 그래프 — "이 심볼을 누가 호출해?" |
 | `mcp__pluck__deps` | grep imports + 파일마다 read | 파일 단위 import 그래프 — "이 파일이 뭘 의존하나? / 누가 import하나?" |
 | `mcp__pluck__digest` | `cargo build`/`pytest`/CI 로그를 `cat`으로 파이프 | 장황한 도구 출력을 압축 (에러/패닉은 그대로, 진행 로그는 카운트로 축약) |
+| `mcp__pluck__plan` | 추측성 `search`/`read` 반복 | 자유 형식 task를 받아 다음 3-5 retrieval 호출 + confidence 지표 추천 |
 
 ## 독립 실행 CLI (에이전트 없이)
 
@@ -166,11 +168,12 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 | 역방향 호출 그래프 (`impact`) | ✗ | ✗ | **✓** |
 | 파일 단위 import 그래프 (`deps`) | ✗ | ✗ | **✓** |
 | 빌드 / CI / 테스트 로그 압축 (`digest`) | ✗ | ✗ | **✓ — 중앙값 71 %** |
+| 탐색 추천기 (`plan`) | ✗ | ✗ | **✓** |
 
 ## 로드맵
 
 - **v0.1.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인.
-- **v0.2.0**: 확장된 검색 표면 — ✅ `digest`, ✅ `impact`, ✅ `deps`, ◻ `plan` (탐색 추천기).
+- **v0.2.0**: 확장된 검색 표면 — ✅ `digest`, ✅ `impact`, ✅ `deps`, ✅ `plan`.
 - **v0.3.0**: 자연어 리콜 품질 — 쿼리 확장, 2단계 cascade, NDCG@10 측정.
 - **v0.4.0**: 언어 커버리지 — Java, C / C++, Kotlin, Ruby, PHP, Swift.
 - **v0.5.0**: 채택률 카운터, 툴 설명 A/B 하네스, LLM-in-loop 벤치, Aider / OpenHands / Cursor hook.

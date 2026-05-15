@@ -26,7 +26,8 @@
 
 ```
 Without pluck:  ls → grep → cat file1 → cat file2 → cat file3 → ...
-With pluck:     pluck.search "auth flow"            → ranked chunks, BM25 + semantic
+With pluck:     pluck.plan "fix auth-token expiry"  → 3-5 next-call recommendations
+                pluck.search "auth flow"            → ranked chunks, BM25 + semantic
                 pluck.peek validate_token           → signature + callees only
                 pluck.symbol validate_token         → just that function's body
                 pluck.impact validate_token         → every caller, depth-capped
@@ -103,6 +104,7 @@ Agents call specific tools depending on what they need. Bash is the fallback, no
 | `mcp__pluck__impact` | grep + read each caller | Reverse call graph — "who calls this symbol?" |
 | `mcp__pluck__deps` | grep imports + read each file | File-level import graph — "what does this file depend on / who imports it?" |
 | `mcp__pluck__digest` | piping `cargo build`/`pytest`/CI logs to `cat` | Compress verbose tool output (errors / panics kept verbatim, progress lines collapsed) |
+| `mcp__pluck__plan` | speculative `search`/`read` loop | Given a free-form task, recommend the next 3-5 retrieval calls + confidence indicator |
 
 ## Standalone CLI (no agent)
 
@@ -166,11 +168,12 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 | Reverse call graph (`impact`) | ✗ | ✗ | **✓** |
 | File-level import graph (`deps`) | ✗ | ✗ | **✓** |
 | Build / CI / test log compression (`digest`) | ✗ | ✗ | **✓ — 71 % median** |
+| Exploration recommender (`plan`) | ✗ | ✗ | **✓** |
 
 ## Roadmap
 
 - **v0.1.0**: First crates.io publish, MCP tools, session dedup, smart outline.
-- **v0.2.0**: Expanded surface — ✅ `digest`, ✅ `impact`, ✅ `deps`, ◻ `plan` (exploration recommender).
+- **v0.2.0**: Expanded surface — ✅ `digest`, ✅ `impact`, ✅ `deps`, ✅ `plan`.
 - **v0.3.0**: Natural-language recall — query expansion, two-stage cascade, NDCG@10 measurement.
 - **v0.4.0**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
 - **v0.5.0**: Adoption-rate counter, tool-description A/B harness, LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
