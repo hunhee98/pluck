@@ -7,3 +7,4 @@
 //! (file:line:col, traceback, panic stack, failed-step body).
 
 pub mod cargo;
+pub mod npm;
