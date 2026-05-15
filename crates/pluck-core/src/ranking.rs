@@ -82,7 +82,7 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
 
 pub fn is_test_path(path: &str) -> bool {
     let p = path.to_lowercase();
-    p.contains("/test/")
+    if p.contains("/test/")
         || p.contains("/tests/")
         || p.contains("/__tests__/")
         || p.starts_with("test/")
@@ -93,6 +93,19 @@ pub fn is_test_path(path: &str) -> bool {
         || p.contains("_spec.")
         || p.ends_with("_test.rs")
         || p.ends_with("_test.go")
+    {
+        return true;
+    }
+    // Workspace test-utility crates: a leading path segment that ends
+    // in `-test` or `-tests` (e.g. `tokio-test/src/task.rs`). These
+    // crates ship test scaffolding, not real APIs, so they should be
+    // demoted on non-test queries the same way `tests/` directories are.
+    if let Some(first) = p.split('/').next() {
+        if first.ends_with("-test") || first.ends_with("-tests") {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -184,6 +197,19 @@ mod tests {
         assert!(is_test_path("src/auth_spec.rb"));
         assert!(!is_test_path("src/auth/login.rs"));
         assert!(!is_test_path("src/test_helpers/mod.rs")); // utility, not test
+    }
+
+    #[test]
+    fn is_test_path_covers_workspace_test_crates() {
+        // Workspace pattern: tokio's `tokio-test` crate ships test
+        // scaffolding (Mock, task::spawn for tests, etc.) and should
+        // not outrank the real `tokio/src/...` APIs on prose queries.
+        assert!(is_test_path("tokio-test/src/task.rs"));
+        assert!(is_test_path("tokio-test/src/io.rs"));
+        assert!(is_test_path("foo-tests/src/lib.rs"));
+        // Adjacent but legitimate utility crates must not be demoted.
+        assert!(!is_test_path("tokio-util/src/codec.rs"));
+        assert!(!is_test_path("tokio-stream/src/lib.rs"));
     }
 
     #[test]
