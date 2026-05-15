@@ -6,6 +6,7 @@
 pub mod bm25;
 pub mod callees;
 pub mod chunker;
+pub mod digest;
 pub mod fusion;
 pub mod index;
 pub mod indexer;
