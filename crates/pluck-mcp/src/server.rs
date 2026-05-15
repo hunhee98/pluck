@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use pluck_core::callees::extract_callees;
 use pluck_core::chunker::Language;
+use pluck_core::digest::{self, Format};
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::indexer::index_repo;
 use pluck_core::outliner::{outline_source, render as render_outline};
@@ -255,6 +256,16 @@ pub struct ExpandParams {
 
 fn default_hop() -> u8 {
     1
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DigestParams {
+    /// The raw tool output to compress (cargo, npm, pytest, or GitHub Actions log).
+    pub input: String,
+    /// Force a specific format instead of auto-detecting.
+    /// One of: cargo, npm, pnpm, yarn, bun, pytest, ci, gha, actions.
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 // ── Tool router ─────────────────────────────────────────────────────────────
@@ -708,6 +719,37 @@ impl PluckServer {
         out.push_str(&format!(
             "\n[expanded {} callees across {} hop(s)]\n",
             total_rendered, hop
+        ));
+        Ok(out)
+    }
+
+    #[doc = include_str!("../../../docs/mcp-descriptions/digest.md")]
+    #[tool(name = "digest")]
+    pub async fn digest_tool(
+        &self,
+        Parameters(p): Parameters<DigestParams>,
+    ) -> Result<String, McpError> {
+        let fmt: Option<Format> = match p.format.as_deref() {
+            Some(name) => Some(Format::parse_name(name).ok_or_else(|| {
+                McpError::invalid_params(
+                    format!(
+                        "unknown format {:?}; valid names: cargo, npm, pnpm, yarn, bun, pytest, ci, gha, actions",
+                        name
+                    ),
+                    None,
+                )
+            })?),
+            None => None,
+        };
+
+        let result = digest::digest(&p.input, fmt);
+        let saved = result.input_bytes.saturating_sub(result.text.len());
+        let pct = (result.savings_fraction() * 100.0).round() as u32;
+
+        let mut out = result.text;
+        out.push_str(&format!(
+            "\n[digest: format={} saved={saved}B ({pct}%)]\n",
+            result.format.name()
         ));
         Ok(out)
     }
@@ -1317,5 +1359,50 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn digest_tool_compresses_cargo_output() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let cargo_log = "   Compiling serde v1.0.0\n   Compiling tokio v1.30.0\n   Compiling app v0.1.0\n    Finished `dev` profile in 3.21s\n";
+        let out = server
+            .digest_tool(Parameters(DigestParams {
+                input: cargo_log.to_string(),
+                format: None,
+            }))
+            .await
+            .expect("digest_tool");
+
+        assert!(out.contains("[cargo] compiled 3"), "missing summary: {out}");
+        assert!(out.contains("Finished"), "Finished must survive: {out}");
+        assert!(!out.contains("Compiling serde"), "progress must be collapsed: {out}");
+        assert!(out.contains("[digest: format=cargo"), "missing metadata footer: {out}");
+    }
+
+    #[tokio::test]
+    async fn digest_tool_rejects_unknown_format() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+        let res = server
+            .digest_tool(Parameters(DigestParams {
+                input: "anything".to_string(),
+                format: Some("not-a-format".to_string()),
+            }))
+            .await;
+        assert!(res.is_err(), "unknown format must error");
+        let msg = format!("{:?}", res.err().unwrap());
+        assert!(msg.contains("unknown format"), "got: {msg}");
     }
 }
