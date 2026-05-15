@@ -273,7 +273,9 @@ fn is_test_line(trimmed: &str) -> bool {
     // Matches `test foo::bar ... ok`, `... FAILED`, `... ignored`,
     // `... bench`. The trailing `...` is `... `.
     trimmed.starts_with("test ")
-        && (trimmed.contains(" ok") || trimmed.contains(" FAILED") || trimmed.contains(" ignored")
+        && (trimmed.contains(" ok")
+            || trimmed.contains(" FAILED")
+            || trimmed.contains(" ignored")
             || trimmed.contains(" bench:"))
 }
 
@@ -309,7 +311,10 @@ mod tests {
             out.contains("[cargo] compiled 3"),
             "missing compiled summary, got: {out}"
         );
-        assert!(out.contains("Finished"), "Finished line must survive: {out}");
+        assert!(
+            out.contains("Finished"),
+            "Finished line must survive: {out}"
+        );
         // No raw Compiling rows.
         assert!(
             !out.contains("Compiling serde"),

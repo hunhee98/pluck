@@ -469,8 +469,7 @@ impl PluckIndex {
         let mut visited: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
         // BFS frontier: (chunk_id, level)
-        let mut frontier: std::collections::VecDeque<(u64, u8)> =
-            std::collections::VecDeque::new();
+        let mut frontier: std::collections::VecDeque<(u64, u8)> = std::collections::VecDeque::new();
 
         for id in self.lookup_callers(name) {
             if visited.insert(id) {
@@ -492,9 +491,14 @@ impl PluckIndex {
                 }
             }
 
-            let is_test =
-                hit.path.contains("/test") || hit.path.contains("_test") || hit.path.contains("spec");
-            out.push(ImpactHit { depth: level, is_test, hit });
+            let is_test = hit.path.contains("/test")
+                || hit.path.contains("_test")
+                || hit.path.contains("spec");
+            out.push(ImpactHit {
+                depth: level,
+                is_test,
+                hit,
+            });
         }
 
         // Sort: production callers first, then test callers; within
@@ -742,18 +746,22 @@ fn recommend_tool(h: &SearchHit) -> (&'static str, String) {
                 )
             }
         }
-        ChunkKind::Struct | ChunkKind::Enum => {
-            ("symbol", "type definition — read the shape before any usage site".to_string())
-        }
-        ChunkKind::Class => {
-            ("symbol", "class definition — see the methods at the same time as the structure".to_string())
-        }
-        ChunkKind::Impl | ChunkKind::Trait => {
-            ("symbol", "method / contract surface — read in one shot".to_string())
-        }
-        ChunkKind::Module => {
-            ("read", "module-level chunk — outline the file to see every symbol".to_string())
-        }
+        ChunkKind::Struct | ChunkKind::Enum => (
+            "symbol",
+            "type definition — read the shape before any usage site".to_string(),
+        ),
+        ChunkKind::Class => (
+            "symbol",
+            "class definition — see the methods at the same time as the structure".to_string(),
+        ),
+        ChunkKind::Impl | ChunkKind::Trait => (
+            "symbol",
+            "method / contract surface — read in one shot".to_string(),
+        ),
+        ChunkKind::Module => (
+            "read",
+            "module-level chunk — outline the file to see every symbol".to_string(),
+        ),
     }
 }
 
@@ -1337,14 +1345,20 @@ pub fn validate_token(token: &str) -> bool {
     fn lookup_callers_finds_direct_caller() {
         let idx = index_two_rust_files();
         let caller_ids = idx.lookup_callers("validate_token");
-        assert!(!caller_ids.is_empty(), "handle_request must appear as a caller");
+        assert!(
+            !caller_ids.is_empty(),
+            "handle_request must appear as a caller"
+        );
     }
 
     #[test]
     fn impact_depth_1_returns_direct_caller() {
         let idx = index_two_rust_files();
         let results = idx.impact("validate_token", 1).unwrap();
-        assert!(!results.is_empty(), "impact must return at least one caller");
+        assert!(
+            !results.is_empty(),
+            "impact must return at least one caller"
+        );
         assert!(
             results.iter().any(|h| h.hit.symbol == "handle_request"),
             "handle_request must be in impact result"
@@ -1389,14 +1403,20 @@ pub fn validate_token(token: &str) -> bool {
     fn deps_resolves_typescript_relative_import() {
         let idx = PluckIndex::in_ram().unwrap();
         let files = [
-            ("src/auth/login.ts", "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n"),
+            (
+                "src/auth/login.ts",
+                "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n",
+            ),
             ("src/crypto/jwt.ts", "export function jwt() {}\n"),
         ];
         crate::indexer::index_files_in_memory(&idx, &files).unwrap();
 
         let deps = idx.deps("src/auth/login.ts");
         assert!(!deps.is_empty(), "deps was empty");
-        let hit = deps.iter().find(|d| d.raw == "../crypto/jwt").expect("import missing");
+        let hit = deps
+            .iter()
+            .find(|d| d.raw == "../crypto/jwt")
+            .expect("import missing");
         assert_eq!(hit.resolved.as_deref(), Some("src/crypto/jwt.ts"));
     }
 
@@ -1404,13 +1424,19 @@ pub fn validate_token(token: &str) -> bool {
     fn deps_resolves_rust_absolute_use() {
         let idx = PluckIndex::in_ram().unwrap();
         let files = [
-            ("crates/x/src/main.rs", "use crate::auth::login;\nfn main() {}\n"),
+            (
+                "crates/x/src/main.rs",
+                "use crate::auth::login;\nfn main() {}\n",
+            ),
             ("crates/x/src/auth/login.rs", "pub fn login() {}\n"),
         ];
         crate::indexer::index_files_in_memory(&idx, &files).unwrap();
 
         let deps = idx.deps("crates/x/src/main.rs");
-        let hit = deps.iter().find(|d| d.raw.contains("auth")).expect("auth import missing");
+        let hit = deps
+            .iter()
+            .find(|d| d.raw.contains("auth"))
+            .expect("auth import missing");
         assert_eq!(hit.resolved.as_deref(), Some("crates/x/src/auth/login.rs"));
     }
 
@@ -1418,8 +1444,14 @@ pub fn validate_token(token: &str) -> bool {
     fn importers_reverse_edge() {
         let idx = PluckIndex::in_ram().unwrap();
         let files = [
-            ("src/auth/login.ts", "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n"),
-            ("src/admin/panel.ts", "import { jwt } from \"../crypto/jwt\";\nexport function panel() {}\n"),
+            (
+                "src/auth/login.ts",
+                "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n",
+            ),
+            (
+                "src/admin/panel.ts",
+                "import { jwt } from \"../crypto/jwt\";\nexport function panel() {}\n",
+            ),
             ("src/crypto/jwt.ts", "export function jwt() {}\n"),
         ];
         crate::indexer::index_files_in_memory(&idx, &files).unwrap();
@@ -1441,7 +1473,10 @@ pub fn validate_token(token: &str) -> bool {
 
         let deps = idx.deps("src/main.go");
         let fmt_dep = deps.iter().find(|d| d.raw == "fmt").expect("fmt missing");
-        assert!(fmt_dep.resolved.is_none(), "fmt should not resolve to a repo file");
+        assert!(
+            fmt_dep.resolved.is_none(),
+            "fmt should not resolve to a repo file"
+        );
     }
 
     #[test]
@@ -1504,10 +1539,14 @@ function authorize(user: string) { return true; }
         crate::indexer::index_files_in_memory(&idx, &files).unwrap();
 
         let plan = idx.plan("authenticate authorize", 5).unwrap();
-        let read_steps: Vec<&PlanStep> =
-            plan.steps.iter().filter(|s| s.tool == "read").collect();
+        let read_steps: Vec<&PlanStep> = plan.steps.iter().filter(|s| s.tool == "read").collect();
         // One read step covering the whole file.
-        assert_eq!(read_steps.len(), 1, "expected one read step, got {:?}", plan.steps);
+        assert_eq!(
+            read_steps.len(),
+            1,
+            "expected one read step, got {:?}",
+            plan.steps
+        );
         assert_eq!(read_steps[0].target, "src/handlers.ts");
     }
 }

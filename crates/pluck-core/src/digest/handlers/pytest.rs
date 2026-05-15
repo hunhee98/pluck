@@ -323,7 +323,10 @@ mod tests {
             "==================== 1 failed, 2 passed in 0.14s ====================\n",
         );
         let out = digest(&input);
-        assert!(out.contains("PASSED"), "PASSED lines must survive on failure: {out}");
+        assert!(
+            out.contains("PASSED"),
+            "PASSED lines must survive on failure: {out}"
+        );
         assert!(out.contains("FAILED"), "FAILED line must survive: {out}");
         assert!(
             out.contains("1 failed, 2 passed"),
@@ -341,8 +344,14 @@ mod tests {
             "==================== 1 failed in 0.05s ====================\n",
         );
         let out = digest(&input);
-        assert!(out.contains("E   AssertionError"), "traceback must survive: {out}");
-        assert!(out.contains("assert 1 == 2"), "assertion must survive: {out}");
+        assert!(
+            out.contains("E   AssertionError"),
+            "traceback must survive: {out}"
+        );
+        assert!(
+            out.contains("assert 1 == 2"),
+            "assertion must survive: {out}"
+        );
     }
 
     #[test]

@@ -143,9 +143,7 @@ impl NpmProgress {
     }
 
     fn is_empty(&self) -> bool {
-        self.yarn_phases == 0
-            && self.pnpm_resolved == 0
-            && self.generic_lines == 0
+        self.yarn_phases == 0 && self.pnpm_resolved == 0 && self.generic_lines == 0
     }
 }
 
@@ -266,7 +264,9 @@ fn is_keep_always(trimmed: &str) -> bool {
 fn parse_after(s: &str, keyword: &str) -> Option<usize> {
     let pos = s.find(keyword)?;
     let rest = &s[pos + keyword.len()..];
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -315,7 +315,10 @@ mod tests {
             "Done in 5.21s.\n",
         );
         let out = digest(input);
-        assert!(out.contains("Done in 5.21s"), "Done line must survive: {out}");
+        assert!(
+            out.contains("Done in 5.21s"),
+            "Done line must survive: {out}"
+        );
         assert!(
             !out.contains("[1/4]"),
             "yarn phase lines must be collapsed: {out}"
@@ -330,7 +333,10 @@ mod tests {
             "added 248 packages in 5.2s\n",
         );
         let out = digest(input);
-        assert!(out.contains("added 248 packages in 5.2s"), "summary must survive: {out}");
+        assert!(
+            out.contains("added 248 packages in 5.2s"),
+            "summary must survive: {out}"
+        );
     }
 
     #[test]
@@ -342,8 +348,14 @@ mod tests {
             "npm ERR! path /tmp/pkg/package.json\n",
         );
         let out = digest(input);
-        assert!(out.contains("npm ERR! code ENOENT"), "error must survive: {out}");
-        assert!(out.contains("npm ERR! syscall open"), "error must survive: {out}");
+        assert!(
+            out.contains("npm ERR! code ENOENT"),
+            "error must survive: {out}"
+        );
+        assert!(
+            out.contains("npm ERR! syscall open"),
+            "error must survive: {out}"
+        );
         assert!(out.contains("npm ERR! path"), "error must survive: {out}");
     }
 
@@ -359,10 +371,22 @@ mod tests {
             "added 50 packages in 2s\n",
         );
         let out = digest(input);
-        assert!(out.contains("> app@1.0.0 build"), "script header must survive: {out}");
-        assert!(out.contains("vite v5.0.0"), "script output must survive: {out}");
-        assert!(out.contains("dist/index.html"), "script output must survive: {out}");
-        assert!(out.contains("added 50 packages"), "summary must survive: {out}");
+        assert!(
+            out.contains("> app@1.0.0 build"),
+            "script header must survive: {out}"
+        );
+        assert!(
+            out.contains("vite v5.0.0"),
+            "script output must survive: {out}"
+        );
+        assert!(
+            out.contains("dist/index.html"),
+            "script output must survive: {out}"
+        );
+        assert!(
+            out.contains("added 50 packages"),
+            "summary must survive: {out}"
+        );
         assert!(out.len() < input.len(), "must shrink: {out}");
     }
 

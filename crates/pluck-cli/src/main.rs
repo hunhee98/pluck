@@ -519,10 +519,7 @@ fn cmd_digest(path: Option<PathBuf>, format_name: Option<&str>, show_format: boo
     use std::io::Read as _;
 
     let input = match path {
-        Some(p) => {
-            std::fs::read_to_string(&p)
-                .with_context(|| format!("read {}", p.display()))?
-        }
+        Some(p) => std::fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))?,
         None => {
             let mut buf = String::new();
             std::io::stdin()
@@ -561,7 +558,9 @@ fn cmd_digest(path: Option<PathBuf>, format_name: Option<&str>, show_format: boo
 
 #[cfg(test)]
 mod tests {
-    use super::{cmd_digest, cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml};
+    use super::{
+        cmd_digest, cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml,
+    };
     use std::path::PathBuf;
 
     #[test]

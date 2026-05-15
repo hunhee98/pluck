@@ -829,12 +829,7 @@ impl PluckServer {
         for h in &prod {
             out.push_str(&format!(
                 "[depth {}]  {}:L{}-{}  {} ({:?})\n",
-                h.depth,
-                h.hit.path,
-                h.hit.start_line,
-                h.hit.end_line,
-                h.hit.symbol,
-                h.hit.kind
+                h.depth, h.hit.path, h.hit.start_line, h.hit.end_line, h.hit.symbol, h.hit.kind
             ));
             out.push_str(&h.hit.content);
             if !out.ends_with('\n') {
@@ -848,12 +843,7 @@ impl PluckServer {
             for h in &test {
                 out.push_str(&format!(
                     "[depth {}]  {}:L{}-{}  {} ({:?})\n",
-                    h.depth,
-                    h.hit.path,
-                    h.hit.start_line,
-                    h.hit.end_line,
-                    h.hit.symbol,
-                    h.hit.kind
+                    h.depth, h.hit.path, h.hit.start_line, h.hit.end_line, h.hit.symbol, h.hit.kind
                 ));
                 out.push_str(&h.hit.content);
                 if !out.ends_with('\n') {
@@ -876,10 +866,7 @@ impl PluckServer {
 
     #[doc = include_str!("../descriptions/deps.md")]
     #[tool(name = "deps")]
-    pub async fn deps(
-        &self,
-        Parameters(p): Parameters<DepsParams>,
-    ) -> Result<String, McpError> {
+    pub async fn deps(&self, Parameters(p): Parameters<DepsParams>) -> Result<String, McpError> {
         // Normalize the path the same way other tools do so callers can pass
         // absolute or repo-relative forms interchangeably.
         let abs = self.resolve_in_repo(&p.path)?;
@@ -908,7 +895,11 @@ impl PluckServer {
         }
 
         let header = if p.reverse {
-            format!("=== importers of: {} — {} edge(s) ===\n\n", rel, edges.len())
+            format!(
+                "=== importers of: {} — {} edge(s) ===\n\n",
+                rel,
+                edges.len()
+            )
         } else {
             format!("=== deps of: {} — {} edge(s) ===\n\n", rel, edges.len())
         };
@@ -944,10 +935,7 @@ impl PluckServer {
 
     #[doc = include_str!("../descriptions/plan.md")]
     #[tool(name = "plan")]
-    pub async fn plan(
-        &self,
-        Parameters(p): Parameters<PlanParams>,
-    ) -> Result<String, McpError> {
+    pub async fn plan(&self, Parameters(p): Parameters<PlanParams>) -> Result<String, McpError> {
         let plan = self
             .inner
             .index
@@ -1626,8 +1614,14 @@ mod tests {
 
         assert!(out.contains("[cargo] compiled 3"), "missing summary: {out}");
         assert!(out.contains("Finished"), "Finished must survive: {out}");
-        assert!(!out.contains("Compiling serde"), "progress must be collapsed: {out}");
-        assert!(out.contains("[digest: format=cargo"), "missing metadata footer: {out}");
+        assert!(
+            !out.contains("Compiling serde"),
+            "progress must be collapsed: {out}"
+        );
+        assert!(
+            out.contains("[digest: format=cargo"),
+            "missing metadata footer: {out}"
+        );
     }
 
     #[tokio::test]

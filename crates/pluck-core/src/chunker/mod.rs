@@ -784,8 +784,14 @@ extern crate serde;
 fn main() {}
 "#;
         let r = chunk_source_with_meta(src, Language::Rust).unwrap();
-        assert!(r.imports.iter().any(|i| i.contains("std::collections::HashMap")));
-        assert!(r.imports.iter().any(|i| i.contains("crate::index::PluckIndex")));
+        assert!(r
+            .imports
+            .iter()
+            .any(|i| i.contains("std::collections::HashMap")));
+        assert!(r
+            .imports
+            .iter()
+            .any(|i| i.contains("crate::index::PluckIndex")));
         assert!(r.imports.iter().any(|i| i.contains("super::types::Chunk")));
         assert!(r.imports.iter().any(|i| i == "serde"));
     }
@@ -806,7 +812,10 @@ def main():
         assert!(r.imports.iter().any(|i| i == "os"));
         assert!(r.imports.iter().any(|i| i.contains("json")));
         assert!(r.imports.iter().any(|i| i == "pathlib"));
-        assert!(r.imports.iter().any(|i| i.contains(".local") || i == ".local"));
+        assert!(r
+            .imports
+            .iter()
+            .any(|i| i.contains(".local") || i == ".local"));
     }
 
     #[test]

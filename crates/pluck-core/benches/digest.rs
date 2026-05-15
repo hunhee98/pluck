@@ -205,7 +205,10 @@ fn main() {
         savings_pcts.push(pct);
         total_input += in_bytes;
         total_output += out_bytes;
-        println!("| {} | `{label}` | {in_bytes} | {out_bytes} | {pct:.0}% |", i + 1);
+        println!(
+            "| {} | `{label}` | {in_bytes} | {out_bytes} | {pct:.0}% |",
+            i + 1
+        );
     }
 
     savings_pcts.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -222,11 +225,11 @@ fn main() {
         0.0
     };
 
-    println!(
-        "| Σ | total | **{total_input}** | **{total_output}** | **{total_pct:.0}%** |"
-    );
+    println!("| Σ | total | **{total_input}** | **{total_output}** | **{total_pct:.0}%** |");
     println!();
     println!("Median savings: **{median_pct:.0}%**  (gated metric: digest_savings_pct)");
-    println!("Total: {total_input} → {total_output} bytes ({total_saved} bytes saved, {total_pct:.0}%)");
+    println!(
+        "Total: {total_input} → {total_output} bytes ({total_saved} bytes saved, {total_pct:.0}%)"
+    );
     println!();
 }

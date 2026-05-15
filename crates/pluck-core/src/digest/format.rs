@@ -134,12 +134,16 @@ mod tests {
 
     #[test]
     fn unknown_for_arbitrary_text() {
-        assert_eq!(detect("hello world\nnothing to see here\n"), Format::Unknown);
+        assert_eq!(
+            detect("hello world\nnothing to see here\n"),
+            Format::Unknown
+        );
     }
 
     #[test]
     fn cargo_detected_from_two_compiling_lines() {
-        let input = "   Compiling serde v1.0.0\n   Compiling tokio v1.30.0\n    Finished `dev` profile\n";
+        let input =
+            "   Compiling serde v1.0.0\n   Compiling tokio v1.30.0\n    Finished `dev` profile\n";
         assert_eq!(detect(input), Format::Cargo);
     }
 
@@ -153,7 +157,8 @@ mod tests {
 
     #[test]
     fn npm_detected_from_added_packages_line() {
-        let input = "yarn install v1.22.0\n[1/4] Resolving packages...\nadded 248 packages in 5.2s\n";
+        let input =
+            "yarn install v1.22.0\n[1/4] Resolving packages...\nadded 248 packages in 5.2s\n";
         assert_eq!(detect(input), Format::NpmFamily);
     }
 

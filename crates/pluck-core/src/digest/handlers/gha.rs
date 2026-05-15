@@ -73,11 +73,7 @@ pub fn digest(input: &str) -> String {
                         let n = held_body.len();
                         held_body.clear();
                         if n > 0 {
-                            let _ = writeln!(
-                                out,
-                                "[gha] {}: ok ({n} lines suppressed)",
-                                step_name
-                            );
+                            let _ = writeln!(out, "[gha] {}: ok ({n} lines suppressed)", step_name);
                         }
                     }
                     push_line(&mut out, raw); // emit ##[endgroup]
@@ -175,7 +171,10 @@ mod tests {
             !out.contains("Compiling serde"),
             "body must be collapsed: {out}"
         );
-        assert!(out.contains("##[group]Build crate"), "group header kept: {out}");
+        assert!(
+            out.contains("##[group]Build crate"),
+            "group header kept: {out}"
+        );
         assert!(out.contains("##[endgroup]"), "endgroup kept: {out}");
         assert!(out.len() < input.len(), "must shrink: {out}");
     }
@@ -191,8 +190,14 @@ mod tests {
         );
         let out = digest(input);
         // Body preserved because of the FAILED line.
-        assert!(out.contains("test a::passes"), "ok line must survive: {out}");
-        assert!(out.contains("test b::fails ... FAILED"), "failure must survive: {out}");
+        assert!(
+            out.contains("test a::passes"),
+            "ok line must survive: {out}"
+        );
+        assert!(
+            out.contains("test b::fails ... FAILED"),
+            "failure must survive: {out}"
+        );
     }
 
     #[test]
@@ -204,7 +209,10 @@ mod tests {
             "##[endgroup]\n",
         );
         let out = digest(input);
-        assert!(out.contains("##[error]ESLint"), "##[error] directive must survive: {out}");
+        assert!(
+            out.contains("##[error]ESLint"),
+            "##[error] directive must survive: {out}"
+        );
         assert!(out.contains("no-undef"), "error body must survive: {out}");
     }
 
