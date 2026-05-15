@@ -22,9 +22,8 @@ request — it tells us why this isn't a usage question. -->
 
 ## Where would this fit on the roadmap?
 
-<!-- Optional. If you've read docs/ROADMAP.md, point to a version
-section (v0.2.0 surface-area wave, v0.3.0 NL recall quality, SOON,
-LATER, etc.) or say "doesn't fit any of these". -->
+<!-- Optional. If the README's version arc covers it, point to a
+version (v0.2.0, v0.3.0, …) or say "doesn't fit any of these". -->
 
 ## Recall complaint? (only fill this section if you opened this
 because a search missed)

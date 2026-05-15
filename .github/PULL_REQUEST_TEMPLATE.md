@@ -42,5 +42,5 @@ this PR?
 - [ ] Yes — listed below with the migration path:
 
 <!-- If anything in this list is unclear, link the related issue or
-ROADMAP version section so a reviewer can place this change in
-context. -->
+the README version-arc bullet so a reviewer can place this change
+in context. -->

@@ -44,7 +44,7 @@ Cursor harnesses pluggable later. Don't break it.
 Subject line: `<type>(<scope>): <description>` (≤ 72 chars).
 
 - `type`: `feat` / `fix` / `bench` / `docs` / `chore` / `refactor` / `ci`.
-- `scope`: the crate (`core`, `mcp`, `cli`, `bench`) or `roadmap` for `docs/ROADMAP.md`.
+- `scope`: the crate (`core`, `mcp`, `cli`, `bench`) or a section name for top-level docs (`readme`, `ci`, …).
 
 Body cites the metric that improved or the invariant preserved. Example:
 

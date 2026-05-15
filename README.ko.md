@@ -23,7 +23,7 @@
 
 **pluck이 (아직) 아쉬운 영역:**
 
-- **만능 CLI:** 다른 Rust 코드 검색 도구들은 `digest` 스타일의 빌드/CI 로그 압축, 파일 단위 의존/임팩트 그래프, 탐색 추천, 더 많은 언어 지원을 이미 제공해요. pluck은 아직 없지만, v0.2.0/v0.4.0에서 추가될 예정이에요 ([`docs/ROADMAP.md`](docs/ROADMAP.md) 참고).
+- **만능 CLI:** 다른 Rust 코드 검색 도구들은 `digest` 스타일의 빌드/CI 로그 압축, 파일 단위 의존/임팩트 그래프, 탐색 추천, 더 많은 언어 지원을 이미 제공해요. pluck은 아직 없지만, v0.2.0과 v0.4.0에서 추가될 예정이에요 (README 하단 버전 arc 참고).
 - **이미 심볼명을 아는 경우의 grep 대체:** 리터럴 문자열 검색은 순수 `ripgrep`이 압도적으로 빨라요. `pluck.grep`은 ripgrep 패스스루라서 어느 쪽을 써도 무방해요.
 
 핵심 가설은 **장시간 에이전트 세션 안에서는 inner loop가 누적된다**는 거예요. 한 번 쓰고 끝나는 one-shot 워크플로는 cold-start CLI로도 충분해요. pluck의 진짜 강점은 30번째 호출 이후부터 확실히 드러난답니다.
@@ -204,11 +204,11 @@ graph LR
   bench --> core
 ```
 
-`pluck-core` 크레이트는 설계상 MCP에 의존하지 않아요. 덕분에 나중에 Aider / OpenHands / Cursor 하니스를 플러그인처럼 쉽게 추가할 수 있답니다 (v0.5.0, [`docs/ROADMAP.md`](docs/ROADMAP.md) 참고).
+`pluck-core` 크레이트는 설계상 MCP에 의존하지 않아요. 덕분에 나중에 Aider / OpenHands / Cursor 하니스를 플러그인처럼 쉽게 추가할 수 있답니다 (v0.5.0 작업, 아래 참고).
 
 ## 로드맵
 
-[`docs/ROADMAP.md`](docs/ROADMAP.md)에는 향후 1년의 계획이 버전별로 나뉘어 있어요 (v0.1.0 배포 기준선 → v0.5.0 채택 및 가시성 확보). 요약하면 다음과 같아요:
+향후 1년의 계획을 버전별로 나누면 (v0.1.0 배포 기준선 → v0.5.0 채택 및 가시성 확보):
 
 - **v0.1.0** (next): 첫 crates.io 배포, 3가지 안전장치(safety guard), `pluck init`, 오픈소스 위생 관리. 기능 범위는 좁고 새 툴은 없어요.
 - **v0.2.0**: `pluck.digest`, `pluck.impact`, `pluck.deps`, `pluck.plan` — CLI 기능의 부족한 점을 채워요.

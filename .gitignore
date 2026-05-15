@@ -27,6 +27,9 @@ Cargo.lock.bak
 # Internal-only notes (competitor analysis, drafts, etc.) — never published.
 /docs/internal/
 
+# Internal planning roadmap (the public version arc lives in README).
+/docs/ROADMAP.md
+
 # Claude Code
 CLAUDE.md
 .mcp.json

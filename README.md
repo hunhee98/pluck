@@ -23,7 +23,7 @@
 
 **What pluck is not (yet):**
 
-- **A Swiss-army CLI.** Other Rust code-retrieval tools today ship `digest`-style build/CI log compression, file-level dependency / impact graphs, exploration recommenders, and broader language coverage. pluck doesn't yet — those land in v0.2.0/v0.4.0 (see [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+- **A Swiss-army CLI.** Other Rust code-retrieval tools today ship `digest`-style build/CI log compression, file-level dependency / impact graphs, exploration recommenders, and broader language coverage. pluck doesn't yet — those land in v0.2.0 and v0.4.0 (see the version arc at the bottom of this README).
 - **A grep replacement when you already know the symbol.** Plain `ripgrep` is unbeatably fast at literal-string search; `pluck.grep` is a ripgrep passthrough, so use either.
 
 The architectural bet is that **the inner loop compounds over the course of a long agent session**. Cold-start CLI is fine for one-shot queries; pluck's edges show up after the 30th call.
@@ -202,11 +202,11 @@ graph LR
   bench --> core
 ```
 
-The `pluck-core` crate has no MCP dependency by design — that's what keeps Aider / OpenHands / Cursor harnesses pluggable later (see v0.5.0 in [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+The `pluck-core` crate has no MCP dependency by design — that's what keeps Aider / OpenHands / Cursor harnesses pluggable later (v0.5.0 work, below).
 
 ## Roadmap
 
-[`docs/ROADMAP.md`](docs/ROADMAP.md) cuts the next year into per-version sections (v0.1.0 ship cutline → v0.5.0 adoption + observability). The short version:
+The next year, cut into per-version sections (v0.1.0 ship cutline → v0.5.0 adoption + observability):
 
 - **v0.1.0** (next): first crates.io publish, three safety guards, `pluck init`, OSS hygiene. Sharp surface, no new tools.
 - **v0.2.0**: `pluck.digest`, `pluck.impact`, `pluck.deps`, `pluck.plan` — close the CLI-surface gap.
