@@ -172,6 +172,10 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 
 ## Roadmap
 
+<p align="center">
+  <img src="assets/images/roadmap.png" alt="Roadmap">
+</p>
+
 - **v0.1.0**: First crates.io publish, MCP tools, session dedup, smart outline.
 - **v0.2.0**: Expanded surface — ✅ `digest`, ✅ `impact`, ✅ `deps`, ✅ `plan`.
 - **v0.3.0**: Natural-language recall — query expansion, two-stage cascade, NDCG@10 measurement.
