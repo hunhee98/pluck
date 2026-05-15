@@ -41,7 +41,7 @@ ORDER=(pluck-core pluck-mcp pluck-cli)
 for crate in "${ORDER[@]}"; do
   echo "==> publish: $crate ($([ "$DRY_RUN" = true ] && echo DRY-RUN || echo LIVE))"
   if [ "$DRY_RUN" = true ]; then
-    ( cd "crates/$crate" && cargo publish --dry-run --allow-dirty=false )
+    ( cd "crates/$crate" && cargo publish --dry-run )
   else
     ( cd "crates/$crate" && cargo publish )
     # crates.io indexing can lag a few seconds between dependents.
