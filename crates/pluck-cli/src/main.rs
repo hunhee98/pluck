@@ -93,6 +93,8 @@ enum Command {
 enum InitTarget {
     /// Claude Code project `.mcp.json` in the current directory.
     Claude,
+    /// Codex global `~/.codex/config.toml` (`[mcp_servers.pluck]`).
+    Codex,
 }
 
 fn main() -> Result<()> {
@@ -170,6 +172,13 @@ fn cmd_init(target: InitTarget, pluckd: Option<PathBuf>, repo: Option<PathBuf>) 
 
     match target {
         InitTarget::Claude => write_claude_mcp_json(&pluckd_path, &repo_path),
+        InitTarget::Codex => {
+            let config_path = dirs::home_dir()
+                .context("could not resolve home directory")?
+                .join(".codex")
+                .join("config.toml");
+            write_codex_config_toml(&config_path, &pluckd_path, &repo_path)
+        }
     }
 }
 
@@ -263,6 +272,92 @@ fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
     }
     println!("  command: {}", pluckd_path.display());
     println!("  repo:    {}", repo_path.display());
+    Ok(())
+}
+
+/// Write or update `~/.codex/config.toml` so that Codex launches
+/// `pluckd` on the next session. Codex's config is global, so a
+/// re-run from a different repo replaces the previous entry's
+/// `--repo` arg in place. Format and comments outside the
+/// `mcp_servers.pluck` table are preserved via `toml_edit`.
+fn write_codex_config_toml(
+    config_path: &Path,
+    pluckd_path: &Path,
+    repo_path: &Path,
+) -> Result<()> {
+    if !config_path.exists() {
+        anyhow::bail!(
+            "Codex config not found at {}. Install Codex first, then re-run `pluck init --target codex`.",
+            config_path.display()
+        );
+    }
+
+    let raw = std::fs::read_to_string(config_path)
+        .with_context(|| format!("read {}", config_path.display()))?;
+    let mut doc: toml_edit::DocumentMut = raw.parse().with_context(|| {
+        format!(
+            "{} is not valid TOML; fix or remove it before re-running `pluck init`",
+            config_path.display()
+        )
+    })?;
+
+    let prev = doc
+        .get("mcp_servers")
+        .and_then(|s| s.get("pluck"))
+        .map(|t| t.to_string());
+
+    let servers = doc
+        .entry("mcp_servers")
+        .or_insert_with(toml_edit::table)
+        .as_table_mut()
+        .ok_or_else(|| {
+            anyhow::anyhow!("`mcp_servers` in {} is not a table", config_path.display())
+        })?;
+    // Keep nested-table style ([mcp_servers.pluck]) rather than inline.
+    servers.set_implicit(true);
+
+    let mut entry = toml_edit::Table::new();
+    entry.insert(
+        "command",
+        toml_edit::Item::Value(pluckd_path.display().to_string().into()),
+    );
+    let mut args = toml_edit::Array::new();
+    args.push("--repo");
+    args.push(repo_path.display().to_string());
+    entry.insert("args", toml_edit::Item::Value(args.into()));
+
+    servers.insert("pluck", toml_edit::Item::Table(entry));
+
+    let new_pluck_str = doc
+        .get("mcp_servers")
+        .and_then(|s| s.get("pluck"))
+        .map(|t| t.to_string());
+    let already_correct = prev.is_some() && prev == new_pluck_str;
+
+    std::fs::write(config_path, doc.to_string())
+        .with_context(|| format!("write {}", config_path.display()))?;
+
+    if already_correct {
+        println!(
+            "pluck init: {} already registered the same pluck entry (no change)",
+            config_path.display()
+        );
+    } else if prev.is_some() {
+        println!(
+            "pluck init: updated `pluck` entry in {}",
+            config_path.display()
+        );
+    } else {
+        println!(
+            "pluck init: registered `pluck` MCP server in {}",
+            config_path.display()
+        );
+    }
+    println!("  command: {}", pluckd_path.display());
+    println!("  repo:    {}", repo_path.display());
+    println!(
+        "  note:    Codex's `mcp_servers` table is global; re-run from a different repo to switch."
+    );
     Ok(())
 }
 
@@ -402,7 +497,7 @@ fn print_compact(hits: &[SearchHit], query: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{cmd_read, parse_line_range, write_claude_mcp_json};
+    use super::{cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml};
     use std::path::PathBuf;
 
     #[test]
@@ -536,6 +631,125 @@ mod tests {
         let msg = format!("{err:?}");
         assert!(
             msg.contains("not valid JSON"),
+            "expected helpful diagnostic, got: {msg}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_codex_config_toml_creates_pluck_entry_preserving_others() {
+        let tmp = tmp_dir("codex-preserve");
+        let cfg = tmp.join("config.toml");
+        // Mimic a real Codex config with an unrelated server + comments.
+        std::fs::write(
+            &cfg,
+            r#"# user config
+model = "gpt-5"
+
+[mcp_servers.pencil]
+command = "/Applications/Pencil.app/run"
+args = ["--app", "desktop"]
+
+[projects."/Users/me/x"]
+trust_level = "trusted"
+"#,
+        )
+        .unwrap();
+
+        write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/opt/pluck/bin/pluckd"),
+            &PathBuf::from("/Users/me/x"),
+        )
+        .unwrap();
+
+        let body = std::fs::read_to_string(&cfg).unwrap();
+        assert!(
+            body.contains("[mcp_servers.pencil]"),
+            "pre-existing pencil entry must survive: {body}"
+        );
+        assert!(
+            body.contains("[mcp_servers.pluck]"),
+            "new pluck entry must be present: {body}"
+        );
+        assert!(body.contains("/opt/pluck/bin/pluckd"));
+        assert!(body.contains("/Users/me/x"));
+        assert!(
+            body.contains("model = \"gpt-5\""),
+            "top-level keys must survive"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_codex_config_toml_rejects_missing_file() {
+        let tmp = tmp_dir("codex-missing");
+        let cfg = tmp.join("does-not-exist.toml");
+        let err = write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/opt/pluckd"),
+            &PathBuf::from("/repo"),
+        )
+        .expect_err("missing Codex config must error, not silently create");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("Codex config not found"),
+            "expected install-Codex-first diagnostic, got: {msg}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_codex_config_toml_is_idempotent_and_updates_path() {
+        let tmp = tmp_dir("codex-update");
+        let cfg = tmp.join("config.toml");
+        std::fs::write(&cfg, "# starter\n").unwrap();
+
+        write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/old/pluckd"),
+            &PathBuf::from("/repo/old"),
+        )
+        .unwrap();
+        let first = std::fs::read_to_string(&cfg).unwrap();
+        // Idempotent same-input re-run.
+        write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/old/pluckd"),
+            &PathBuf::from("/repo/old"),
+        )
+        .unwrap();
+        let second = std::fs::read_to_string(&cfg).unwrap();
+        assert_eq!(first, second, "same-input re-run must be byte-identical");
+
+        // Different path → entry updated, other tables untouched.
+        write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/new/pluckd"),
+            &PathBuf::from("/repo/new"),
+        )
+        .unwrap();
+        let third = std::fs::read_to_string(&cfg).unwrap();
+        assert!(third.contains("/new/pluckd"));
+        assert!(third.contains("/repo/new"));
+        assert!(!third.contains("/old/pluckd"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_codex_config_toml_rejects_corrupt_toml() {
+        let tmp = tmp_dir("codex-corrupt");
+        let cfg = tmp.join("config.toml");
+        std::fs::write(&cfg, "not = valid = toml === bad").unwrap();
+        let err = write_codex_config_toml(
+            &cfg,
+            &PathBuf::from("/opt/pluckd"),
+            &PathBuf::from("/repo"),
+        )
+        .expect_err("corrupt TOML must error, not silently overwrite");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("not valid TOML"),
             "expected helpful diagnostic, got: {msg}"
         );
         let _ = std::fs::remove_dir_all(&tmp);
