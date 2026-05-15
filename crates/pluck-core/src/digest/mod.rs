@@ -49,10 +49,9 @@ pub fn digest(input: &str, format: Option<Format>) -> DigestOutput {
     let text = match fmt {
         Format::Cargo => handlers::cargo::digest(input),
         Format::NpmFamily => handlers::npm::digest(input),
-        // pytest / GHA handlers land in subsequent commits.
-        // Until then, those known formats pass through verbatim so
-        // CLI/MCP wiring already accepts them as valid format names.
-        Format::Pytest | Format::GitHubActions | Format::Unknown => input.to_string(),
+        Format::Pytest => handlers::pytest::digest(input),
+        // GHA handler lands in the next commit.
+        Format::GitHubActions | Format::Unknown => input.to_string(),
     };
     DigestOutput {
         format: fmt,
