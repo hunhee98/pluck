@@ -6,10 +6,11 @@
 //! multiplications, no ONNX, no GPU. The whole `encode` call is
 //! O(n_tokens × dim) with great cache locality.
 //!
-//! Today: `potion-code-16M` (60 MB, dim ~256, vocab ~30 K) — the same
-//! model the leading static-embedding code-search tools use. Quality
-//! around NDCG@10 ≈ 0.85 on code retrieval benchmarks, latency under
-//! a millisecond per encode on CPU.
+//! Today: `potion-code-16M` — code-retrieval-specialized model2vec
+//! distilled from `nomic-ai/CodeRankEmbed` on the CornStack code
+//! corpus. Smaller than the general-purpose `potion-base-32M` but
+//! tuned for code; NDCG@10 ≈ 0.85 on the standard retrieval
+//! benchmarks, sub-millisecond encode on CPU.
 //!
 //! Fetching: [`StaticEncoder::load_or_fetch`] pulls the model from
 //! Hugging Face the first time and caches under `~/.pluck/models/<id>/`
@@ -24,7 +25,7 @@ use tokenizers::Tokenizer;
 use crate::store::pluck_root;
 
 /// Default Hugging Face model id pluck embeds with.
-pub const DEFAULT_MODEL_ID: &str = "minishlab/potion-base-32M";
+pub const DEFAULT_MODEL_ID: &str = "minishlab/potion-code-16M";
 
 /// Static (lookup-based) embedding encoder.
 ///
