@@ -31,3 +31,8 @@ Cargo.lock.bak
 CLAUDE.md
 .mcp.json
 .claude/
+
+# Codex
+AGENTS.md
+.codex/
+.agents/
