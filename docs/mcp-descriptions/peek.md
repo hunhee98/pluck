@@ -1,37 +1,18 @@
-Signature + direct-callee names for a symbol. No body.
+Return a symbol's signature plus direct callees, without the body.
 
-**Use this when you need the interface, not the implementation.** It
-is the cheapest way to learn what a function takes / returns and what
-it depends on — strictly fewer tokens than `pluck.symbol` for the same
-question.
+## WHEN
 
-## When to call
+Use `pluck.peek` when you need the interface: parameters, return type,
+and one-hop dependencies. It is ideal for API mapping, refactor
+planning, and deciding whether a body read is worth the tokens.
 
-- "What does this function take and return?"
-- "Who does this function call?" (one-hop callees only)
-- Building a mental model of an API surface without reading bodies.
-- Refactor planning: who calls whom inside this module.
+## WHY
 
-## Output shape
+Many questions need shape, not implementation. `peek` gives the useful
+contract and callee list at a fraction of the cost of `symbol`.
 
-```
-src/auth/login.ts:L45-89  handleLogin (Function)
-async function handleLogin(req: LoginRequest): Promise<AuthResult>
-  calls: validateToken, db.user.findOne, audit.log
-```
+## FALLBACK
 
-## Token math
-
-A 40-line function body costs ~200 tokens via `pluck.symbol`.
-Signature + callee list costs ~15. **~10× cheaper** for "I just need
-the interface" tasks.
-
-## When to escalate
-
-- Need the body itself — `pluck.symbol`.
-- Need callees-of-callees — `pluck.expand` with `hop >= 2`.
-
-## Name resolution
-
-Same `<path>/<name>` disambiguation as `pluck.symbol`. Ambiguous bare
-names return a candidate list.
+Use `pluck.symbol` when you need the body, `pluck.expand` when you need
+callee bodies across hops, and bash only outside the repo or when the
+daemon is unreachable.

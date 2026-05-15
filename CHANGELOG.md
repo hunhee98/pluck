@@ -6,6 +6,8 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-15
+
 ### Added
 
 #### `pluck.plan` — exploration recommender (v0.2.0 surface item)
@@ -76,12 +78,11 @@ Versioning follows [SemVer](https://semver.org).
   extraction; the cost moved to chunking and was eliminated by the
   single-pass query merge.
 
-## [0.1.0] — not yet released
+## [0.1.0] — internal pre-release
 
-The first crates.io publish. Items below are tracked in the v0.1.0
-ship cutline of [`ROADMAP.md`](ROADMAP.md).
+Internal development cutline before the first crates.io publish.
 
-### Added (already on `main`, awaiting publish)
+### Added
 
 - Workspace scaffolding (`pluck-core`, `pluck-mcp`, `pluck-cli`,
   `pluck-bench`).
@@ -104,5 +105,6 @@ ship cutline of [`ROADMAP.md`](ROADMAP.md).
 - CI workflows, Claude Code plugin manifest, CONTRIBUTING,
   CODE_OF_CONDUCT, GitHub issue + PR templates.
 
-[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/hunhee98/pluck/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hunhee98/pluck/releases/tag/v0.1.0

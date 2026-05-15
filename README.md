@@ -176,8 +176,8 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
   <img src="assets/images/roadmap.png" alt="Roadmap">
 </p>
 
-- **v0.1.0**: First crates.io publish, MCP tools, session dedup, smart outline.
-- **v0.2.0**: Expanded surface — ✅ `digest`, ✅ `impact`, ✅ `deps`, ✅ `plan`.
+- **v0.2.0**: First crates.io publish, MCP tools, session dedup, smart outline,
+  and expanded surface — `digest`, `impact`, `deps`, `plan`.
 - **v0.3.0**: Natural-language recall — query expansion, two-stage cascade, NDCG@10 measurement.
 - **v0.4.0**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
 - **v0.5.0**: Adoption-rate counter, tool-description A/B harness, LLM-in-loop bench, Aider / OpenHands / Cursor hooks.

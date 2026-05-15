@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tree_sitter::{Parser, QueryCursor};
+use tree_sitter::{Parser, QueryCursor, StreamingIterator};
 
 /// File-level chunker output: chunks plus the raw import strings extracted
 /// from the single tree walk. `imports` is what `pluck.deps` consumes.
@@ -49,7 +49,7 @@ pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> 
     let capture_names = query.capture_names();
 
     let mut cursor = QueryCursor::new();
-    let matches = cursor.matches(query, tree.root_node(), src.as_bytes());
+    let mut matches = cursor.matches(query, tree.root_node(), src.as_bytes());
 
     let lines: Vec<&str> = src.lines().collect();
 
@@ -73,7 +73,7 @@ pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> 
     // deduplicate: same start byte can appear when a node matches multiple patterns
     let mut seen: HashSet<usize> = HashSet::new();
 
-    for m in matches {
+    while let Some(m) = matches.next() {
         let mut def_node: Option<tree_sitter::Node> = None;
         let mut name_range: Option<std::ops::Range<usize>> = None;
         let mut chunk_kind: Option<ChunkKind> = None;

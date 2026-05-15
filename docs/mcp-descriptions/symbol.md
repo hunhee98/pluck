@@ -1,36 +1,20 @@
-Read exactly one named symbol (function, class, struct, method).
+Read exactly one named function, method, class, struct, enum, impl, or
+trait body.
 
-**Use this whenever you know the symbol name and want only that
-symbol's body.** It is the default substitute for `cat <file>` followed
-by scrolling to a function — strictly fewer tokens, no manual line
-counting, and the response is the chunk the indexer already extracted.
+## WHEN
 
-## When to call
+Use `pluck.symbol` when you know the symbol name and need its body:
+after `search`/`grep`, before editing a function, or when a bare name
+is enough. Use `path/name` to disambiguate collisions.
 
-- You found a symbol name via `pluck.search` / `pluck.grep` and want
-  its body.
-- You know the function/class name from earlier context.
-- Editing a known function — fetch its current body before producing
-  the edit.
+## WHY
 
-## Name resolution
+The response is the AST chunk the indexer already extracted, so the
+agent avoids reading an entire file just to scroll to one definition.
+Session dedup collapses repeated chunks to placeholders.
 
-- `handleLogin` — returns the body if exactly one chunk matches.
-- `auth/handleLogin` — path-qualified for collisions (`<path>/<name>`,
-  splits on the last `/`).
-- Ambiguous bare names return a candidate list with `path` + `kind`;
-  re-call with the path-qualified form.
+## FALLBACK
 
-## Token math
-
-A 40-line function inside an 800-line file costs ~6 000 tokens via
-`cat`; `pluck.symbol` costs ~300. Same information, 20× cheaper.
-
-## When to fall back
-
-- The symbol is not a defined function/class (e.g. an inline arrow
-  callback) — use `pluck.search` or `pluck.grep` instead.
-- The target is outside the indexed repo — use bash.
-
-Session dedup applies: a symbol fetched earlier in the session
-collapses to a `[already-shown: …]` placeholder on the second request.
+Use `pluck.search` or `pluck.grep` for inline callbacks or non-symbol
+matches. Use bash only for files outside the repo or when the daemon is
+unreachable.

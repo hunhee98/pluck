@@ -1,44 +1,20 @@
-Hybrid BM25 + semantic search across the indexed repo. Returns ranked
-chunks (function / class units) with line numbers.
+Hybrid BM25 + semantic search over indexed code chunks.
 
-**Use this whenever the query is conceptual rather than a literal
-substring.** "Where is auth handled?", "what generates the JWT?",
-"how does the watcher detect changes?" — these are the cases where
-`grep` fails because the chunk contains no overlapping keyword, but
-the semantic stage can still rank it correctly.
+## WHEN
 
-## When to call
+Use `pluck.search` for conceptual lookup: "where is auth handled?",
+"what generates the token?", or any query where you do not already know
+the exact string. Use `compact: true` for discovery-only results.
 
-- Locate code by capability or intent rather than literal name.
-- First-pass exploration of an unfamiliar repo.
-- The result chunk is the function body, not a single matching line —
-  no follow-up `cat` needed.
+## WHY
 
-## How it works
+Search returns ranked function/class chunks with paths and line ranges,
+so the agent can inspect the right code directly instead of guessing
+identifiers and opening whole files. Session dedup collapses repeated
+chunks to placeholders.
 
-BM25 (with field weights: `symbol`×5, `signature`×3, `content`×1) and
-a static-embedding cosine score are fused via Reciprocal Rank Fusion.
-A 12 % noise floor relative to the top hit drops irrelevant
-candidates. The post-fusion ranking pipeline applies:
+## FALLBACK
 
-  - ×1.5 boost for chunks whose symbol matches a query token exactly
-  - +5 % per extra sibling chunk from the same file (cap +25 %)
-  - ×0.5 penalty on test-file paths, auto-disabled when the query
-    itself mentions `test` / `spec`
-
-## Modes
-
-- default — full chunk body in the response (lossless).
-- `compact: true` — only score, path, line range, and matching lines
-  inside the chunk. Lossy; useful for pure discovery.
-
-Returned hits already in the session set collapse to a one-line
-`[already-shown: …]` placeholder.
-
-## When to fall back to `pluck.grep`
-
-- You already know the literal pattern.
-- You need every match, not the most relevant ones.
-- You need ripgrep's specific flags (`-A`, `-B`, `--type`, …).
-
-For semantic / intent-based queries: always `pluck.search`.
+Use `pluck.grep` when you already know the literal pattern, need every
+match, or need ripgrep flags. Use bash only for paths outside the repo
+or when the daemon is unreachable.

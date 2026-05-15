@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use tree_sitter::{Parser, Query, QueryCursor, Tree};
+use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator, Tree};
 
 use crate::chunker::Language;
 
@@ -24,12 +24,12 @@ pub fn extract_callees_with_query(
 ) -> Vec<String> {
     let mut cursor = QueryCursor::new();
     cursor.set_byte_range(scope_start..scope_end);
-    let matches = cursor.matches(query, tree.root_node(), src.as_bytes());
+    let mut matches = cursor.matches(query, tree.root_node(), src.as_bytes());
 
     let mut out: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    for m in matches {
+    while let Some(m) = matches.next() {
         for cap in m.captures {
             let start = cap.node.start_byte();
             if start < scope_start || start >= scope_end {
@@ -92,12 +92,12 @@ pub fn extract_callees(src: &str, lang: Language) -> Vec<String> {
     };
 
     let mut cursor = QueryCursor::new();
-    let matches = cursor.matches(&query, tree.root_node(), src.as_bytes());
+    let mut matches = cursor.matches(&query, tree.root_node(), src.as_bytes());
 
     let mut out: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
 
-    for m in matches {
+    while let Some(m) = matches.next() {
         for cap in m.captures {
             let text = src[cap.node.byte_range()].trim();
             // Collapse intra-token whitespace (member chains can wrap across

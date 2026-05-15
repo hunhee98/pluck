@@ -25,11 +25,11 @@ impl Lang {
 
     pub fn ts_language(self) -> Language {
         match self {
-            Self::TypeScript => tree_sitter_typescript::language_typescript(),
-            Self::JavaScript => tree_sitter_javascript::language(),
-            Self::Rust => tree_sitter_rust::language(),
-            Self::Python => tree_sitter_python::language(),
-            Self::Go => tree_sitter_go::language(),
+            Self::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            Self::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Self::Rust => tree_sitter_rust::LANGUAGE.into(),
+            Self::Python => tree_sitter_python::LANGUAGE.into(),
+            Self::Go => tree_sitter_go::LANGUAGE.into(),
         }
     }
 

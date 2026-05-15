@@ -8,7 +8,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/hunhee98/pluck"
@@ -17,12 +17,12 @@ readme = "README.md"
 
 [workspace.dependencies]
 # AST / parsing
-tree-sitter = "0.22"
-tree-sitter-rust = "0.21"
-tree-sitter-typescript = "0.21"
-tree-sitter-javascript = "0.21"
-tree-sitter-python = "0.21"
-tree-sitter-go = "0.21"
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-go = "0.25"
 
 # Search / index
 tantivy = "0.26"
@@ -33,7 +33,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 # (safetensors), the HuggingFace tokenizer, and ndarray for the matmul.
 tokenizers = "0.20"
 safetensors = "0.4"
-hf-hub = { version = "0.4", default-features = false, features = ["ureq", "rustls-tls"] }
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"] }
 ndarray = "0.15"
 ort = "2.0.0-rc.12"  # reserved for Phase 4 LLM-driven runners; not wired into core today
 
