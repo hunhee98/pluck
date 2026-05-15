@@ -71,8 +71,28 @@ enum Command {
         cutoff: f32,
     },
 
+    /// Register the pluck MCP server with an agent's config so the
+    /// daemon auto-starts on the next agent launch. Idempotent.
+    Init {
+        /// Target agent. Default: claude.
+        #[arg(long, value_enum, default_value_t = InitTarget::Claude)]
+        target: InitTarget,
+        /// Path to the pluckd binary. Default: resolved via `which pluckd`.
+        #[arg(long)]
+        pluckd: Option<PathBuf>,
+        /// Repo root to register. Default: current directory.
+        #[arg(long)]
+        repo: Option<PathBuf>,
+    },
+
     /// Print version.
     Version,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+enum InitTarget {
+    /// Claude Code project `.mcp.json` in the current directory.
+    Claude,
 }
 
 fn main() -> Result<()> {
@@ -99,6 +119,7 @@ fn main() -> Result<()> {
             compact,
             cutoff,
         } => cmd_search(&query, repo, top_k, compact, cutoff)?,
+        Command::Init { target, pluckd, repo } => cmd_init(target, pluckd, repo)?,
     }
     Ok(())
 }
@@ -131,6 +152,117 @@ fn cmd_index(path: Option<PathBuf>) -> Result<()> {
         stats.files_skipped_read,
     );
     eprintln!("index → {}", dir.display());
+    Ok(())
+}
+
+fn cmd_init(target: InitTarget, pluckd: Option<PathBuf>, repo: Option<PathBuf>) -> Result<()> {
+    let pluckd_path = match pluckd {
+        Some(p) => p,
+        None => resolve_pluckd_binary().context(
+            "could not locate `pluckd` on PATH; install it with \
+             `cargo install pluck-mcp` or pass --pluckd <path>",
+        )?,
+    };
+    let repo_path = match repo {
+        Some(p) => std::fs::canonicalize(&p).with_context(|| format!("canonicalize repo {p:?}"))?,
+        None => std::fs::canonicalize(".").context("canonicalize current directory")?,
+    };
+
+    match target {
+        InitTarget::Claude => write_claude_mcp_json(&pluckd_path, &repo_path),
+    }
+}
+
+fn resolve_pluckd_binary() -> Result<PathBuf> {
+    let out = Shell::new("which")
+        .arg("pluckd")
+        .stderr(Stdio::null())
+        .output()
+        .context("invoke `which pluckd`")?;
+    if !out.status.success() {
+        anyhow::bail!("pluckd not found on PATH");
+    }
+    let path = String::from_utf8(out.stdout)
+        .context("non-UTF-8 path from `which pluckd`")?
+        .trim()
+        .to_string();
+    if path.is_empty() {
+        anyhow::bail!("`which pluckd` returned empty output");
+    }
+    Ok(PathBuf::from(path))
+}
+
+/// Write or update `./.mcp.json` so that Claude Code launches `pluckd`
+/// on the next agent start. Preserves any other `mcpServers` entries
+/// the user already has.
+fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
+    let target = repo_path.join(".mcp.json");
+    let mut doc: serde_json::Value = if target.exists() {
+        let raw = std::fs::read_to_string(&target)
+            .with_context(|| format!("read {}", target.display()))?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "{} exists but is not valid JSON; fix or remove it before re-running `pluck init`",
+                target.display()
+            )
+        })?
+    } else {
+        serde_json::json!({})
+    };
+
+    if !doc.is_object() {
+        anyhow::bail!(
+            "{} top-level is not a JSON object; refusing to overwrite",
+            target.display()
+        );
+    }
+
+    let servers = doc
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() {
+        anyhow::bail!(
+            "`mcpServers` in {} is not an object; refusing to overwrite",
+            target.display()
+        );
+    }
+
+    let prev = servers.as_object().unwrap().get("pluck").cloned();
+    let entry = serde_json::json!({
+        "command": pluckd_path.display().to_string(),
+        "args": ["--repo", repo_path.display().to_string()],
+    });
+    let already_correct = prev.as_ref() == Some(&entry);
+
+    servers
+        .as_object_mut()
+        .unwrap()
+        .insert("pluck".to_string(), entry);
+
+    let body = serde_json::to_string_pretty(&doc).context("serialize .mcp.json")?;
+    std::fs::write(&target, body + "\n")
+        .with_context(|| format!("write {}", target.display()))?;
+
+    if already_correct {
+        println!(
+            "pluck init: {} already registered the same pluck entry (no change)",
+            target.display()
+        );
+    } else if prev.is_some() {
+        println!(
+            "pluck init: updated `pluck` entry in {}",
+            target.display()
+        );
+    } else {
+        println!(
+            "pluck init: registered `pluck` MCP server in {}",
+            target.display()
+        );
+    }
+    println!("  command: {}", pluckd_path.display());
+    println!("  repo:    {}", repo_path.display());
     Ok(())
 }
 
@@ -270,7 +402,8 @@ fn print_compact(hits: &[SearchHit], query: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{cmd_read, parse_line_range};
+    use super::{cmd_read, parse_line_range, write_claude_mcp_json};
+    use std::path::PathBuf;
 
     #[test]
     fn line_range_parses() {
@@ -308,6 +441,104 @@ mod tests {
             msg.contains("not valid UTF-8") || msg.contains("binary"),
             "expected cat-style binary diagnostic, got: {msg}"
         );
+    }
+
+    fn tmp_dir(label: &str) -> PathBuf {
+        let nano = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let p = std::env::temp_dir().join(format!("pluck-init-{label}-{nano}"));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn write_claude_mcp_json_creates_fresh_file() {
+        let tmp = tmp_dir("fresh");
+        let pluckd = PathBuf::from("/opt/pluck/bin/pluckd");
+        write_claude_mcp_json(&pluckd, &tmp).unwrap();
+
+        let body = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            doc["mcpServers"]["pluck"]["command"],
+            "/opt/pluck/bin/pluckd"
+        );
+        let args = doc["mcpServers"]["pluck"]["args"].as_array().unwrap();
+        assert_eq!(args[0], "--repo");
+        assert_eq!(args[1], tmp.display().to_string());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_claude_mcp_json_preserves_other_servers() {
+        let tmp = tmp_dir("preserve");
+        let pre = serde_json::json!({
+            "mcpServers": {
+                "other": { "command": "/usr/local/bin/other", "args": ["serve"] }
+            }
+        });
+        std::fs::write(
+            tmp.join(".mcp.json"),
+            serde_json::to_string_pretty(&pre).unwrap(),
+        )
+        .unwrap();
+
+        let pluckd = PathBuf::from("/opt/pluck/bin/pluckd");
+        write_claude_mcp_json(&pluckd, &tmp).unwrap();
+
+        let body = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(
+            doc["mcpServers"]["other"]["command"],
+            "/usr/local/bin/other",
+            "existing `other` server must survive"
+        );
+        assert_eq!(
+            doc["mcpServers"]["pluck"]["command"],
+            "/opt/pluck/bin/pluckd"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_claude_mcp_json_is_idempotent() {
+        let tmp = tmp_dir("idempotent");
+        let pluckd = PathBuf::from("/opt/pluck/bin/pluckd");
+        write_claude_mcp_json(&pluckd, &tmp).unwrap();
+        let first = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
+        write_claude_mcp_json(&pluckd, &tmp).unwrap();
+        let second = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
+        assert_eq!(first, second, "re-running init must produce identical file");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_claude_mcp_json_updates_stale_pluckd_path() {
+        let tmp = tmp_dir("update");
+        write_claude_mcp_json(&PathBuf::from("/old/pluckd"), &tmp).unwrap();
+        write_claude_mcp_json(&PathBuf::from("/new/pluckd"), &tmp).unwrap();
+
+        let body = std::fs::read_to_string(tmp.join(".mcp.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(doc["mcpServers"]["pluck"]["command"], "/new/pluckd");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_claude_mcp_json_rejects_corrupt_existing_file() {
+        let tmp = tmp_dir("corrupt");
+        std::fs::write(tmp.join(".mcp.json"), "{ this is not valid json").unwrap();
+        let err = write_claude_mcp_json(&PathBuf::from("/opt/pluckd"), &tmp).expect_err(
+            "corrupt existing .mcp.json must error, not silently overwrite",
+        );
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("not valid JSON"),
+            "expected helpful diagnostic, got: {msg}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

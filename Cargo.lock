@@ -1977,6 +1977,7 @@ dependencies = [
  "anyhow",
  "clap",
  "pluck-core",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
