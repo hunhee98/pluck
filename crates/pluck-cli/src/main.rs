@@ -135,7 +135,20 @@ fn cmd_index(path: Option<PathBuf>) -> Result<()> {
 }
 
 fn cmd_read(path: &Path, raw: bool, lines: Option<&str>) -> Result<()> {
-    let src = std::fs::read_to_string(path).with_context(|| format!("read {path:?}"))?;
+    // Binary files trip a `read_to_string` UTF-8 error with a noisy
+    // anyhow trace. Match the MCP `read` shape: read bytes once, then
+    // emit a one-line `cat`-style diagnostic and exit with status 1
+    // so agents can route to bash for byte-level work.
+    let bytes = std::fs::read(path).with_context(|| format!("read {path:?}"))?;
+    let src = match std::str::from_utf8(&bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            anyhow::bail!(
+                "pluck: {}: not valid UTF-8 (likely binary). Use bash `cat` for byte-level reads.",
+                path.display()
+            );
+        }
+    };
 
     if raw {
         print!("{src}");
@@ -257,7 +270,7 @@ fn print_compact(hits: &[SearchHit], query: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_line_range;
+    use super::{cmd_read, parse_line_range};
 
     #[test]
     fn line_range_parses() {
@@ -275,4 +288,41 @@ mod tests {
     fn line_range_rejects_missing_dash() {
         assert!(parse_line_range("10").is_err());
     }
+
+    #[test]
+    fn cmd_read_emits_binary_diagnostic_for_non_utf8() {
+        let nano = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("pluck-cli-bin-{nano}"));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let bin = tmp.join("bin.dat");
+        std::fs::write(&bin, [0xFFu8, 0xFE, 0x00, 0x01, 0x02]).unwrap();
+
+        let err = cmd_read(&bin, true, None).expect_err("binary must error");
+        let msg = format!("{err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert!(
+            msg.contains("not valid UTF-8") || msg.contains("binary"),
+            "expected cat-style binary diagnostic, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn cmd_read_succeeds_on_utf8_text() {
+        let nano = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp = std::env::temp_dir().join(format!("pluck-cli-txt-{nano}"));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let f = tmp.join("hello.txt");
+        std::fs::write(&f, "hello\nworld\n").unwrap();
+        let result = cmd_read(&f, true, None);
+        let _ = std::fs::remove_dir_all(&tmp);
+        assert!(result.is_ok(), "UTF-8 text must read clean, got: {result:?}");
+    }
+
 }
