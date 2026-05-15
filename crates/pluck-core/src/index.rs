@@ -781,6 +781,7 @@ pub struct DepHit {
 ///   - Suffix match for absolute imports: `crate::foo::bar` →
 ///     `**/foo/bar.rs`; `foo.bar` → `**/foo/bar.py`; `fmt` (Go) →
 ///     `**/fmt.go`.
+///
 /// Returns `None` if nothing matches.
 fn resolve_import(importer: &str, raw: &str, indexed: &[String]) -> Option<String> {
     // JS/TS-style relative import.

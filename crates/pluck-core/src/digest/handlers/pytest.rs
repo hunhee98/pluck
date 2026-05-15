@@ -210,8 +210,7 @@ fn is_collection_line(trimmed: &str) -> bool {
 
 fn collect_tally(trimmed: &str, count: &mut Option<usize>) {
     // `collected N items` or `collected N item (M deselected)`
-    if trimmed.starts_with("collected ") {
-        let rest = &trimmed["collected ".len()..];
+    if let Some(rest) = trimmed.strip_prefix("collected ") {
         if let Some(n) = rest
             .split_whitespace()
             .next()
