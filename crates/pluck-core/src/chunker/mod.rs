@@ -10,6 +10,14 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use tree_sitter::{Parser, QueryCursor};
 
+/// File-level chunker output: chunks plus the raw import strings extracted
+/// from the single tree walk. `imports` is what `pluck.deps` consumes.
+#[derive(Debug, Default)]
+pub struct ChunkResult {
+    pub chunks: Vec<Chunk>,
+    pub imports: Vec<String>,
+}
+
 pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang =
@@ -19,8 +27,12 @@ pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
 }
 
 pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
+    chunk_source_with_meta(src, lang).map(|r| r.chunks)
+}
+
+pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> {
     let Some(query) = lang.compiled_query() else {
-        return Ok(Vec::new());
+        return Ok(ChunkResult::default());
     };
 
     let ts_lang = lang.ts_language();
@@ -56,6 +68,8 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
 
     let mut partials: Vec<PartialChunk> = Vec::new();
     let mut all_callees: Vec<(usize, String)> = Vec::new();
+    let mut imports: Vec<String> = Vec::new();
+    let mut imports_seen: HashSet<String> = HashSet::new();
     // deduplicate: same start byte can appear when a node matches multiple patterns
     let mut seen: HashSet<usize> = HashSet::new();
 
@@ -64,6 +78,7 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
         let mut name_range: Option<std::ops::Range<usize>> = None;
         let mut chunk_kind: Option<ChunkKind> = None;
         let mut callee_node: Option<tree_sitter::Node> = None;
+        let mut import_node: Option<tree_sitter::Node> = None;
 
         for cap in m.captures {
             let cap_name = capture_names[cap.index as usize];
@@ -74,7 +89,27 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
                 name_range = Some(cap.node.byte_range());
             } else if cap_name == "callee" {
                 callee_node = Some(cap.node);
+            } else if cap_name == "import" {
+                import_node = Some(cap.node);
             }
+        }
+
+        if let Some(node) = import_node {
+            // JS/TS/Go imports are string literals like `"./foo"` — strip
+            // the surrounding quotes. Rust/Python imports are bare paths
+            // (`foo::bar`, `foo.bar`) and trim is a no-op for them.
+            let raw = src[node.byte_range()].trim();
+            let trimmed = raw
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| raw.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                .or_else(|| raw.strip_prefix('`').and_then(|s| s.strip_suffix('`')))
+                .unwrap_or(raw);
+            let normalized: String = trimmed.split_whitespace().collect::<Vec<_>>().join("");
+            if !normalized.is_empty() && imports_seen.insert(normalized.clone()) {
+                imports.push(normalized);
+            }
+            continue;
         }
 
         if let Some(node) = callee_node {
@@ -152,7 +187,7 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
         })
         .collect();
 
-    Ok(chunks)
+    Ok(ChunkResult { chunks, imports })
 }
 
 fn leading_doc_comment(lines: &[&str], lang: Language, start_row: usize, content: &str) -> String {
@@ -736,5 +771,81 @@ const square = (x) => x * x;
         assert!(names.contains(&"constructor"));
         assert!(names.contains(&"inc"));
         assert!(names.contains(&"square"));
+    }
+
+    #[test]
+    fn imports_rust() {
+        let src = r#"
+use std::collections::HashMap;
+use crate::index::PluckIndex;
+use super::types::Chunk;
+extern crate serde;
+
+fn main() {}
+"#;
+        let r = chunk_source_with_meta(src, Language::Rust).unwrap();
+        assert!(r.imports.iter().any(|i| i.contains("std::collections::HashMap")));
+        assert!(r.imports.iter().any(|i| i.contains("crate::index::PluckIndex")));
+        assert!(r.imports.iter().any(|i| i.contains("super::types::Chunk")));
+        assert!(r.imports.iter().any(|i| i == "serde"));
+    }
+
+    #[test]
+    fn imports_python() {
+        let src = r#"
+import os
+import json as j
+from pathlib import Path
+from .local import helper
+from ..parent import thing
+
+def main():
+    pass
+"#;
+        let r = chunk_source_with_meta(src, Language::Python).unwrap();
+        assert!(r.imports.iter().any(|i| i == "os"));
+        assert!(r.imports.iter().any(|i| i.contains("json")));
+        assert!(r.imports.iter().any(|i| i == "pathlib"));
+        assert!(r.imports.iter().any(|i| i.contains(".local") || i == ".local"));
+    }
+
+    #[test]
+    fn imports_typescript() {
+        let src = r#"
+import foo from "./bar";
+import { a, b } from "./baz";
+import * as ns from "./ns";
+import "./side";
+const q = require("./req");
+const dyn = import("./dyn");
+export { x } from "./re-export";
+"#;
+        let r = chunk_source_with_meta(src, Language::TypeScript).unwrap();
+        assert!(r.imports.contains(&"./bar".to_string()));
+        assert!(r.imports.contains(&"./baz".to_string()));
+        assert!(r.imports.contains(&"./ns".to_string()));
+        assert!(r.imports.contains(&"./side".to_string()));
+        assert!(r.imports.contains(&"./req".to_string()));
+        assert!(r.imports.contains(&"./dyn".to_string()));
+        assert!(r.imports.contains(&"./re-export".to_string()));
+    }
+
+    #[test]
+    fn imports_go() {
+        let src = r#"
+package main
+
+import "fmt"
+import (
+    "os"
+    "github.com/foo/bar"
+)
+
+func main() {}
+"#;
+        let r = chunk_source_with_meta(src, Language::Go).unwrap();
+        assert!(r.imports.contains(&"fmt".to_string()));
+        assert!(r.imports.contains(&"os".to_string()));
+        assert!(r.imports.contains(&"github.com/foo/bar".to_string()));
     }
 }

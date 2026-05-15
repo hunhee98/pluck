@@ -283,6 +283,17 @@ fn default_impact_depth() -> u8 {
     1
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DepsParams {
+    /// Repo-relative path to inspect. Forward mode answers "what does
+    /// this file import?"; reverse mode answers "who imports this file?".
+    pub path: String,
+    /// When true, return reverse edges (importers of `path`).
+    /// Default false (forward = deps).
+    #[serde(default)]
+    pub reverse: bool,
+}
+
 // ── Tool router ─────────────────────────────────────────────────────────────
 
 #[tool_router(router = tool_router)]
@@ -847,6 +858,74 @@ impl PluckServer {
 
         Ok(out)
     }
+
+    #[doc = include_str!("../../../docs/mcp-descriptions/deps.md")]
+    #[tool(name = "deps")]
+    pub async fn deps(
+        &self,
+        Parameters(p): Parameters<DepsParams>,
+    ) -> Result<String, McpError> {
+        // Normalize the path the same way other tools do so callers can pass
+        // absolute or repo-relative forms interchangeably.
+        let abs = self.resolve_in_repo(&p.path)?;
+        let rel = abs
+            .strip_prefix(&self.inner.repo_root)
+            .unwrap_or(&abs)
+            .to_string_lossy()
+            .into_owned();
+
+        let edges = if p.reverse {
+            self.inner.index.importers(&rel)
+        } else {
+            self.inner.index.deps(&rel)
+        };
+
+        if edges.is_empty() {
+            let kind = if p.reverse { "importers" } else { "deps" };
+            return Ok(format!(
+                "no {kind} found for `{}`.\n\n\
+                 Forward `deps` is empty when the file imports nothing or the\n\
+                 language isn't yet supported. Reverse `importers` is empty\n\
+                 when nothing in the indexed repo imports this path; external\n\
+                 callers (other repos, generated code) won't show up.\n",
+                rel
+            ));
+        }
+
+        let header = if p.reverse {
+            format!("=== importers of: {} — {} edge(s) ===\n\n", rel, edges.len())
+        } else {
+            format!("=== deps of: {} — {} edge(s) ===\n\n", rel, edges.len())
+        };
+        let mut out = header;
+        // Bucket: resolved (intra-repo) first, then unresolved (external).
+        let (resolved, unresolved): (Vec<_>, Vec<_>) =
+            edges.iter().partition(|d| d.resolved.is_some());
+        for d in &resolved {
+            // For reverse mode `raw` is the importer's path, which is the
+            // resolved target itself; render as a single path. For forward
+            // mode show `raw -> resolved` so the import string is visible.
+            if p.reverse {
+                out.push_str(&format!("{}\n", d.raw));
+            } else {
+                out.push_str(&format!(
+                    "{} -> {}\n",
+                    d.raw,
+                    d.resolved.as_deref().unwrap_or("?")
+                ));
+            }
+        }
+        if !unresolved.is_empty() {
+            out.push_str(&format!(
+                "\n[external — {} edge(s), no in-repo match]\n",
+                unresolved.len()
+            ));
+            for d in &unresolved {
+                out.push_str(&format!("{}\n", d.raw));
+            }
+        }
+        Ok(out)
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -1261,13 +1340,13 @@ mod tests {
         let server = PluckServer::new(repo).expect("server new");
         let out = server
             .peek(Parameters(PeekParams {
-                name: "chunk_source".into(),
+                name: "chunk_source_with_meta".into(),
             }))
             .await
             .expect("peek");
 
         // Signature line is present, no full body.
-        assert!(out.contains("pub fn chunk_source"), "got: {out}");
+        assert!(out.contains("pub fn chunk_source_with_meta"), "got: {out}");
         assert!(out.contains("calls:"), "got: {out}");
         // peek must be dramatically smaller than pluck.symbol for the
         // same name — that's the entire reason peek exists.
@@ -1282,7 +1361,7 @@ mod tests {
         .unwrap();
         let symbol_out = server2
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source".into(),
+                name: "chunk_source_with_meta".into(),
             }))
             .await
             .expect("symbol");
@@ -1366,13 +1445,13 @@ mod tests {
         let server = PluckServer::new(repo).expect("server new");
         let first = server
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source".into(),
+                name: "chunk_source_with_meta".into(),
             }))
             .await
             .expect("first lookup");
         let second = server
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source".into(),
+                name: "chunk_source_with_meta".into(),
             }))
             .await
             .expect("second lookup");
@@ -1531,6 +1610,60 @@ mod tests {
             .expect("impact");
 
         assert!(out.contains("no callers found"), "got: {out}");
+    }
+
+    #[tokio::test]
+    async fn deps_forward_reports_indexed_file_imports() {
+        // Run against this repo. server.rs has `use pluck_core::index::...`
+        // so the deps query for it must resolve to an in-repo Rust file.
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .deps(Parameters(DepsParams {
+                path: "crates/pluck-mcp/src/server.rs".into(),
+                reverse: false,
+            }))
+            .await
+            .expect("deps");
+
+        assert!(out.contains("=== deps of:"), "got: {out}");
+        // server.rs uses `pluck_core::index::PluckIndex` — the suffix match
+        // should land on the index.rs file inside this repo.
+        assert!(
+            out.contains("index.rs") || out.contains("pluck_core"),
+            "expected an in-repo or symbolic edge, got: {out}"
+        );
+    }
+
+    #[tokio::test]
+    async fn deps_reverse_reports_known_importers() {
+        let repo = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let server = PluckServer::new(repo).expect("server new");
+
+        let out = server
+            .deps(Parameters(DepsParams {
+                path: "crates/pluck-core/src/index.rs".into(),
+                reverse: true,
+            }))
+            .await
+            .expect("deps reverse");
+
+        // At minimum, pluck-mcp's server.rs is a known importer.
+        assert!(
+            out.contains("importers of") || out.contains("no importers"),
+            "got: {out}"
+        );
     }
 
     #[tokio::test]

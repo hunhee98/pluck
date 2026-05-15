@@ -60,6 +60,11 @@ pub struct PluckIndex {
     /// in `add_chunk`; used by `impact()` for upstream blast-radius
     /// queries. Shared with `IndexBatch` via `Arc`.
     callers: Arc<RwLock<HashMap<String, Vec<u64>>>>,
+    /// Forward import map: file_path → list of raw import module paths
+    /// (Rust `use` arg, Python module name, JS/TS/Go string literal).
+    /// Populated by `IndexBatch::add_imports`; used by `deps()` and
+    /// `importers()`. Shared with `IndexBatch` via `Arc`.
+    imports: Arc<RwLock<HashMap<String, Vec<String>>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -134,6 +139,7 @@ impl PluckIndex {
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
             callers: Arc::new(RwLock::new(HashMap::new())),
+            imports: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -151,6 +157,7 @@ impl PluckIndex {
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
             callers: Arc::new(RwLock::new(HashMap::new())),
+            imports: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -177,6 +184,7 @@ impl PluckIndex {
             encoder: self.encoder.clone(),
             embeddings: Arc::clone(&self.embeddings),
             callers: Arc::clone(&self.callers),
+            imports: Arc::clone(&self.imports),
         })
     }
 
@@ -494,6 +502,174 @@ impl PluckIndex {
         out.sort_by_key(|h| (h.is_test as u8, h.depth));
         Ok(out)
     }
+
+    /// Forward dependency edges for `file_path`: every raw import string
+    /// extracted from the file during chunking. Each edge carries a
+    /// best-effort `resolved` path when the import resolves to another
+    /// indexed file (relative imports + suffix match on absolute paths);
+    /// otherwise the import is returned as `raw` only.
+    pub fn deps(&self, file_path: &str) -> Vec<DepHit> {
+        let raws: Vec<String> = self
+            .imports
+            .read()
+            .ok()
+            .and_then(|map| map.get(file_path).cloned())
+            .unwrap_or_default();
+        if raws.is_empty() {
+            return Vec::new();
+        }
+        let indexed: Vec<String> = self
+            .imports
+            .read()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        raws.into_iter()
+            .map(|raw| {
+                let resolved = resolve_import(file_path, &raw, &indexed);
+                DepHit { raw, resolved }
+            })
+            .collect()
+    }
+
+    /// Reverse dependency edges: which indexed files import `file_path`
+    /// (after resolution). Useful for "who depends on this module?" at
+    /// the file level, complementing `impact()` at the symbol level.
+    pub fn importers(&self, file_path: &str) -> Vec<DepHit> {
+        let map = match self.imports.read() {
+            Ok(m) => m,
+            Err(_) => return Vec::new(),
+        };
+        let indexed: Vec<String> = map.keys().cloned().collect();
+        let mut out: Vec<DepHit> = Vec::new();
+        for (importer, raws) in map.iter() {
+            for raw in raws {
+                if resolve_import(importer, raw, &indexed).as_deref() == Some(file_path) {
+                    out.push(DepHit {
+                        raw: importer.clone(),
+                        resolved: Some(importer.clone()),
+                    });
+                    break;
+                }
+            }
+        }
+        out.sort_by(|a, b| a.raw.cmp(&b.raw));
+        out
+    }
+}
+
+/// One edge in a `deps` / `importers` result.
+#[derive(Debug, Clone)]
+pub struct DepHit {
+    /// The import statement as it appears in source (Rust `use` arg,
+    /// JS/TS string literal contents, etc.). For `importers`, this is
+    /// the importing file's path.
+    pub raw: String,
+    /// Resolved file path within the indexed repo, if the importer's
+    /// directory + raw points at a known file. `None` means external
+    /// (std crate, npm package, Go module not in this repo).
+    pub resolved: Option<String>,
+}
+
+/// Best-effort resolution of `raw` (an import string) against the list
+/// of `indexed` file paths in the repo. Handles:
+///   - JS/TS relative imports: `./foo`, `../foo/bar` → join with
+///     importer's directory, try suffixes `.ts`/`.tsx`/`.js`/`.jsx`/
+///     `/index.{ts,tsx,js,jsx}`.
+///   - Python relative imports: `.foo`, `..foo.bar` → dotted leading
+///     dots = directory hops; rest = path components, try `.py` and
+///     `/__init__.py`.
+///   - Suffix match for absolute imports: `crate::foo::bar` →
+///     `**/foo/bar.rs`; `foo.bar` → `**/foo/bar.py`; `fmt` (Go) →
+///     `**/fmt.go`.
+/// Returns `None` if nothing matches.
+fn resolve_import(importer: &str, raw: &str, indexed: &[String]) -> Option<String> {
+    // JS/TS-style relative import.
+    if raw.starts_with("./") || raw.starts_with("../") {
+        let dir = Path::new(importer).parent()?;
+        let base = dir.join(raw).to_string_lossy().into_owned();
+        let base = normalize_dots(&base);
+        for ext in &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] {
+            let candidate = format!("{base}{ext}");
+            if indexed.iter().any(|p| p == &candidate) {
+                return Some(candidate);
+            }
+        }
+        for idx in &["/index.ts", "/index.tsx", "/index.js", "/index.jsx"] {
+            let candidate = format!("{base}{idx}");
+            if indexed.iter().any(|p| p == &candidate) {
+                return Some(candidate);
+            }
+        }
+        return None;
+    }
+    // Python relative import: leading dots are parent-dir hops.
+    if raw.starts_with('.') {
+        let leading_dots = raw.chars().take_while(|c| *c == '.').count();
+        let rest = &raw[leading_dots..];
+        let mut dir = Path::new(importer).parent().map(Path::to_path_buf)?;
+        for _ in 1..leading_dots {
+            dir = dir.parent()?.to_path_buf();
+        }
+        let sub = rest.replace('.', "/");
+        let base = if sub.is_empty() {
+            dir.to_string_lossy().into_owned()
+        } else {
+            dir.join(&sub).to_string_lossy().into_owned()
+        };
+        for cand in &[format!("{base}.py"), format!("{base}/__init__.py")] {
+            if indexed.iter().any(|p| p == cand) {
+                return Some(cand.clone());
+            }
+        }
+        return None;
+    }
+    // Absolute / module-style: try suffix match against indexed files.
+    // For Rust `crate::foo::bar`, strip the head, join with `/`, append `.rs`.
+    let parts: Vec<&str> = if raw.contains("::") {
+        raw.split("::").collect()
+    } else if raw.contains('.') {
+        raw.split('.').collect()
+    } else if raw.contains('/') {
+        raw.split('/').collect()
+    } else {
+        vec![raw]
+    };
+    // Drop common roots that aren't part of the path on disk.
+    let parts: Vec<&str> = parts
+        .into_iter()
+        .filter(|p| !p.is_empty() && !matches!(*p, "crate" | "self" | "super"))
+        .collect();
+    if parts.is_empty() {
+        return None;
+    }
+    let needle = parts.join("/");
+    for ext in &[".rs", ".py", ".ts", ".tsx", ".js", ".jsx", ".go"] {
+        let suffix = format!("/{needle}{ext}");
+        let bare = &suffix[1..];
+        if let Some(hit) = indexed.iter().find(|p| p.ends_with(&suffix) || p == &bare) {
+            return Some(hit.clone());
+        }
+    }
+    // `__init__.py` form.
+    let suffix = format!("/{needle}/__init__.py");
+    if let Some(hit) = indexed.iter().find(|p| p.ends_with(&suffix)) {
+        return Some(hit.clone());
+    }
+    None
+}
+
+fn normalize_dots(path: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out.join("/")
 }
 
 fn inferred_rrf_alpha(query: &str) -> f32 {
@@ -534,6 +710,9 @@ pub struct IndexBatch {
     embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
     /// Shared with `PluckIndex::callers` — written here, read by `impact`.
     callers: Arc<RwLock<HashMap<String, Vec<u64>>>>,
+    /// Shared with `PluckIndex::imports` — written by `add_imports`, read
+    /// by `deps`/`importers`.
+    imports: Arc<RwLock<HashMap<String, Vec<String>>>>,
 }
 
 impl IndexBatch {
@@ -588,6 +767,16 @@ impl IndexBatch {
         Ok(id)
     }
 
+    /// Store the imports extracted for `file_path` (extracted once per
+    /// file during chunking). Always inserts (even when `imports` is
+    /// empty) so the keyset of `imports` doubles as the canonical list
+    /// of indexed files — needed for import-path resolution.
+    pub fn add_imports(&self, file_path: &str, imports: Vec<String>) {
+        if let Ok(mut map) = self.imports.write() {
+            map.insert(file_path.to_string(), imports);
+        }
+    }
+
     pub fn commit(mut self) -> Result<()> {
         self.writer.commit().context("commit")?;
         Ok(())
@@ -600,6 +789,11 @@ impl IndexBatch {
     /// future ordering invariants.
     pub fn delete_path(&mut self, rel_path: &str) -> u64 {
         let term = Term::from_field_text(self.fields.path, rel_path);
+        // Also drop the file's import edges so deletes don't leak into
+        // deps/importers output.
+        if let Ok(mut map) = self.imports.write() {
+            map.remove(rel_path);
+        }
         self.writer.delete_term(term)
     }
 }
@@ -988,5 +1182,64 @@ pub fn validate_token(token: &str) -> bool {
         let idx = index_two_rust_files();
         let hit = idx.hit_by_chunk_id(999_999).unwrap();
         assert!(hit.is_none());
+    }
+
+    #[test]
+    fn deps_resolves_typescript_relative_import() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [
+            ("src/auth/login.ts", "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n"),
+            ("src/crypto/jwt.ts", "export function jwt() {}\n"),
+        ];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let deps = idx.deps("src/auth/login.ts");
+        assert!(!deps.is_empty(), "deps was empty");
+        let hit = deps.iter().find(|d| d.raw == "../crypto/jwt").expect("import missing");
+        assert_eq!(hit.resolved.as_deref(), Some("src/crypto/jwt.ts"));
+    }
+
+    #[test]
+    fn deps_resolves_rust_absolute_use() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [
+            ("crates/x/src/main.rs", "use crate::auth::login;\nfn main() {}\n"),
+            ("crates/x/src/auth/login.rs", "pub fn login() {}\n"),
+        ];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let deps = idx.deps("crates/x/src/main.rs");
+        let hit = deps.iter().find(|d| d.raw.contains("auth")).expect("auth import missing");
+        assert_eq!(hit.resolved.as_deref(), Some("crates/x/src/auth/login.rs"));
+    }
+
+    #[test]
+    fn importers_reverse_edge() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [
+            ("src/auth/login.ts", "import { jwt } from \"../crypto/jwt\";\nexport function login() {}\n"),
+            ("src/admin/panel.ts", "import { jwt } from \"../crypto/jwt\";\nexport function panel() {}\n"),
+            ("src/crypto/jwt.ts", "export function jwt() {}\n"),
+        ];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let importers = idx.importers("src/crypto/jwt.ts");
+        let paths: Vec<&str> = importers.iter().map(|d| d.raw.as_str()).collect();
+        assert!(paths.contains(&"src/auth/login.ts"), "got: {paths:?}");
+        assert!(paths.contains(&"src/admin/panel.ts"), "got: {paths:?}");
+    }
+
+    #[test]
+    fn deps_external_import_unresolved() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = [(
+            "src/main.go",
+            "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hi\") }\n",
+        )];
+        crate::indexer::index_files_in_memory(&idx, &files).unwrap();
+
+        let deps = idx.deps("src/main.go");
+        let fmt_dep = deps.iter().find(|d| d.raw == "fmt").expect("fmt missing");
+        assert!(fmt_dep.resolved.is_none(), "fmt should not resolve to a repo file");
     }
 }

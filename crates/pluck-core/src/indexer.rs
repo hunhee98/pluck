@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 
-use crate::chunker::{chunk_source, Language};
+use crate::chunker::{chunk_source_with_meta, Language};
 use crate::index::PluckIndex;
 
 /// Files larger than this are skipped — they're usually generated assets,
@@ -89,7 +89,7 @@ pub fn index_repo_into(
             }
         };
 
-        let chunks = match chunk_source(&src, lang) {
+        let meta = match chunk_source_with_meta(&src, lang) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("chunk failed for {}: {e}", path.display());
@@ -103,7 +103,8 @@ pub fn index_repo_into(
             .unwrap_or(path)
             .to_string_lossy();
 
-        for c in &chunks {
+        writer.add_imports(rel.as_ref(), meta.imports);
+        for c in &meta.chunks {
             writer
                 .add_chunk(rel.as_ref(), c)
                 .with_context(|| format!("add_chunk failed for {}", path.display()))?;
@@ -134,8 +135,9 @@ pub fn index_files_in_memory(
             stats.files_skipped_lang += 1;
             continue;
         };
-        let chunks = chunk_source(src.as_ref(), lang)?;
-        for c in &chunks {
+        let meta = chunk_source_with_meta(src.as_ref(), lang)?;
+        writer.add_imports(path_str, meta.imports);
+        for c in &meta.chunks {
             writer.add_chunk(path_str, c)?;
             stats.chunks_indexed += 1;
         }
@@ -208,7 +210,7 @@ pub fn reindex_paths(
             }
         };
 
-        let chunks = match chunk_source(&src, lang) {
+        let meta = match chunk_source_with_meta(&src, lang) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("reindex chunk failed for {}: {e}", abs.display());
@@ -217,7 +219,8 @@ pub fn reindex_paths(
             }
         };
 
-        for c in &chunks {
+        writer.add_imports(&rel, meta.imports);
+        for c in &meta.chunks {
             writer
                 .add_chunk(&rel, c)
                 .with_context(|| format!("reindex add_chunk for {}", abs.display()))?;

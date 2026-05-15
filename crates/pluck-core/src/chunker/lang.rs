@@ -55,14 +55,34 @@ impl Lang {
         }
     }
 
+    /// Tree-sitter query that captures file-level import statements.
+    /// Nodes bound to `@import` are emitted as the imported module path
+    /// (raw form — string literal contents for JS/TS/Go, scoped path for
+    /// Rust/Python).
+    pub fn import_query_str(self) -> &'static str {
+        match self {
+            Self::TypeScript => include_str!("queries/imports/typescript.scm"),
+            Self::JavaScript => include_str!("queries/imports/javascript.scm"),
+            Self::Rust => include_str!("queries/imports/rust.scm"),
+            Self::Python => include_str!("queries/imports/python.scm"),
+            Self::Go => include_str!("queries/imports/go.scm"),
+        }
+    }
+
     /// Cached compiled tree-sitter query combining the chunker query (captures
-    /// `@*.definition` / `@*.name`) and the callee query (captures `@callee`).
-    /// One compilation per language for the lifetime of the process — every
-    /// `chunk_source` call walks the tree once with this merged query.
+    /// `@*.definition` / `@*.name`), the callee query (captures `@callee`),
+    /// and the import query (captures `@import`). One compilation per language
+    /// for the lifetime of the process — every `chunk_source` call walks the
+    /// tree once with this merged query.
     pub fn compiled_query(self) -> Option<&'static Query> {
         fn build(lang: Lang) -> Option<Query> {
             let ts = lang.ts_language();
-            let combined = format!("{}\n{}", lang.query_str(), lang.callee_query_str());
+            let combined = format!(
+                "{}\n{}\n{}",
+                lang.query_str(),
+                lang.callee_query_str(),
+                lang.import_query_str(),
+            );
             Query::new(&ts, &combined).ok()
         }
         match self {
