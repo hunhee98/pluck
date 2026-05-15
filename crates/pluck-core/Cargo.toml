@@ -66,3 +66,7 @@ harness = false
 [[bench]]
 name = "recall"
 harness = false
+
+[[bench]]
+name = "digest"
+harness = false

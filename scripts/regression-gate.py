@@ -103,11 +103,22 @@ def measure_session_dedup() -> dict[str, float]:
     return {"session_dedup_session_savings_pct": savings}
 
 
+def measure_digest() -> dict[str, float]:
+    """Median savings: **71%**  (gated metric: digest_savings_pct)"""
+    out = run_bench("pluck-core", "digest")
+    savings = extract(
+        r"Median savings:\s*\*\*(\d+)%\*\*",
+        out,
+    )
+    return {"digest_savings_pct": savings}
+
+
 COLLECTORS = [
     measure_chunker,
     measure_indexer,
     measure_freshness,
     measure_session_dedup,
+    measure_digest,
 ]
 
 

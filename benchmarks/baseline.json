@@ -46,6 +46,13 @@
       "regression_direction": "lower",
       "unit": "%",
       "source": "bench session_dedup — total session savings (Σ row)"
+    },
+    "digest_savings_pct": {
+      "value": 71,
+      "tolerance_pct": 25,
+      "regression_direction": "lower",
+      "unit": "%",
+      "source": "bench digest — median savings across 6 fixtures (cargo-build, cargo-test-green, pnpm-install, yarn-install, pytest-green, gha-log)"
     }
   }
 }
