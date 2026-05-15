@@ -279,7 +279,7 @@ fn fmt_rank(rank: Option<usize>) -> String {
         .unwrap_or_else(|| "miss".to_string())
 }
 
-fn measure(idx: &PluckIndex, cases: &[QueryCase]) -> Metrics {
+fn measure(idx: &PluckIndex, cases: &[QueryCase], alpha: Option<f32>) -> Metrics {
     let mut metrics = Metrics {
         recall5: 0,
         recall10: 0,
@@ -288,7 +288,7 @@ fn measure(idx: &PluckIndex, cases: &[QueryCase]) -> Metrics {
 
     for case in cases {
         let hits = idx
-            .search_hybrid(case.query, 10, 0.0, None)
+            .search_hybrid(case.query, 10, 0.0, alpha)
             .unwrap_or_else(|e| panic!("search {:?}: {e}", case.query));
         if let Some(rank) = rank_of(&hits, case.labels) {
             if rank < 5 {
@@ -304,11 +304,11 @@ fn measure(idx: &PluckIndex, cases: &[QueryCase]) -> Metrics {
     metrics
 }
 
-fn print_summary_row(name: &str, cases: &[QueryCase], idx: &PluckIndex) {
-    let metrics = measure(idx, cases);
+fn print_summary_row(label: &str, cases: &[QueryCase], idx: &PluckIndex, alpha: Option<f32>) {
+    let metrics = measure(idx, cases, alpha);
     let total = cases.len() as f32;
     println!(
-        "| {name} | {} | {:.3} | {:.3} | {:.3} |",
+        "| {label} | {} | {:.3} | {:.3} | {:.3} |",
         cases.len(),
         metrics.recall5 as f32 / total,
         metrics.recall10 as f32 / total,
@@ -316,19 +316,48 @@ fn print_summary_row(name: &str, cases: &[QueryCase], idx: &PluckIndex) {
     );
 }
 
-fn print_details(name: &str, cases: &[QueryCase], idx: &PluckIndex) {
+fn print_details(name: &str, cases: &[QueryCase], idx: &PluckIndex, alpha: Option<f32>) {
     println!();
     println!("### {name}");
     println!("| Query | Rank | Top hit |");
     println!("|-------|-----:|---------|");
     for case in cases {
-        let hits = idx.search_hybrid(case.query, 10, 0.0, None).unwrap();
+        let hits = idx.search_hybrid(case.query, 10, 0.0, alpha).unwrap();
         let rank = rank_of(&hits, case.labels);
         let top = hits
             .first()
             .map(|hit| format!("{}::{}", hit.path, hit.symbol))
             .unwrap_or_else(|| "(none)".to_string());
         println!("| `{}` | {} | `{}` |", case.query, fmt_rank(rank), top);
+    }
+}
+
+fn parse_alpha_sweep() -> Option<Vec<Option<f32>>> {
+    let raw = std::env::var("PLUCK_RECALL_ALPHA_SWEEP").ok()?;
+    let mut alphas: Vec<Option<f32>> = Vec::new();
+    for tok in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if tok.eq_ignore_ascii_case("inferred") || tok.eq_ignore_ascii_case("none") {
+            alphas.push(None);
+        } else {
+            match tok.parse::<f32>() {
+                Ok(v) if (0.0..=1.0).contains(&v) => alphas.push(Some(v)),
+                _ => {
+                    eprintln!("ignoring invalid alpha token: {tok:?}");
+                }
+            }
+        }
+    }
+    if alphas.is_empty() {
+        None
+    } else {
+        Some(alphas)
+    }
+}
+
+fn label_for(alpha: Option<f32>) -> String {
+    match alpha {
+        None => "inferred".to_string(),
+        Some(v) => format!("α={v:.2}"),
     }
 }
 
@@ -352,21 +381,32 @@ fn main() -> Result<()> {
 
     println!();
     println!("model: `{model_id}`");
-    println!();
-    println!("| Dataset | Queries | Recall@5 | Recall@10 | MRR |");
-    println!("|---------|--------:|---------:|----------:|----:|");
-    print_summary_row("synthetic", SYNTHETIC_CASES, &synthetic_idx);
-    if has_tokio {
-        print_summary_row("tokio", TOKIO_CASES, &tokio_idx);
-    } else {
-        eprintln!(
-            "tokio dataset skipped — {} does not exist",
-            tokio_root.display()
-        );
+
+    let alphas = parse_alpha_sweep().unwrap_or_else(|| vec![None]);
+
+    for alpha in &alphas {
+        println!();
+        println!("alpha: `{}`", label_for(*alpha));
+        println!();
+        println!("| Dataset | Queries | Recall@5 | Recall@10 | MRR |");
+        println!("|---------|--------:|---------:|----------:|----:|");
+        print_summary_row("synthetic", SYNTHETIC_CASES, &synthetic_idx, *alpha);
+        if has_tokio {
+            print_summary_row("tokio", TOKIO_CASES, &tokio_idx, *alpha);
+        } else {
+            eprintln!(
+                "tokio dataset skipped — {} does not exist",
+                tokio_root.display()
+            );
+        }
     }
-    print_details("synthetic", SYNTHETIC_CASES, &synthetic_idx);
+
+    // Per-query detail only for the first alpha; otherwise the output
+    // gets unwieldy.
+    let detail_alpha = alphas[0];
+    print_details("synthetic", SYNTHETIC_CASES, &synthetic_idx, detail_alpha);
     if has_tokio {
-        print_details("tokio", TOKIO_CASES, &tokio_idx);
+        print_details("tokio", TOKIO_CASES, &tokio_idx, detail_alpha);
     }
     println!();
 
