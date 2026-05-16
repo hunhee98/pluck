@@ -123,7 +123,7 @@ recall argument.
 - [ ] Continuous α from query embedding (replace
       `is_natural_language_query` heuristic with two centroid
       dot-products).
-- [ ] BM25 stopword filter.
+- [x] BM25 stopword filter.
 
 ---
 
