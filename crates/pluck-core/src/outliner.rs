@@ -16,6 +16,12 @@ use crate::chunker::{chunk_source, Chunk, ChunkKind, Language};
 /// Below this, outlining hurts more than it helps.
 pub const RAW_BELOW_LINES: u32 = 100;
 
+/// Inline tiny bodies inside an outline so the first `pluck.read` can answer
+/// trivial helper questions without a follow-up `pluck.symbol` call.
+pub const INLINE_BODY_MAX_LINES: u32 = 6;
+pub const INLINE_BODY_MAX_BYTES: usize = 360;
+pub const INLINE_BODY_TOTAL_MAX_BYTES: usize = 2_048;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutlineMode {
     /// Raw file content (file too small or unsupported language).
@@ -41,6 +47,7 @@ pub struct OutlineEntry {
     pub start_line: u32,
     pub end_line: u32,
     pub signature: String,
+    pub inline_body: Option<String>,
 }
 
 pub fn outline_file(path: &Path) -> Result<Outline> {
@@ -68,14 +75,19 @@ pub fn outline_source(src: &str, lang: Option<Language>, path: &str) -> Outline 
         _ => return raw(path, src, total_lines),
     };
 
+    let mut inline_body_budget = INLINE_BODY_TOTAL_MAX_BYTES;
     let entries = chunks
         .into_iter()
-        .map(|c: Chunk| OutlineEntry {
-            kind: c.kind,
-            symbol: c.symbol,
-            start_line: c.start_line,
-            end_line: c.end_line,
-            signature: c.signature,
+        .map(|c: Chunk| {
+            let inline_body = inline_body_for(&c, &mut inline_body_budget);
+            OutlineEntry {
+                kind: c.kind,
+                symbol: c.symbol,
+                start_line: c.start_line,
+                end_line: c.end_line,
+                signature: c.signature,
+                inline_body,
+            }
         })
         .collect();
 
@@ -137,9 +149,9 @@ fn render_symbols(o: &Outline) -> String {
     writeln!(out, "{} ({} lines)", o.path, o.total_lines).unwrap();
     writeln!(out).unwrap();
 
-    // Signature-only outline. Methods indent under their class. Body lookup is
-    // a separate call (pluck.symbol); inlining bodies here re-prints what the
-    // signature already describes and inflates token count.
+    // Signature-first outline. Tiny bodies are included within a strict total
+    // budget; larger bodies stay behind `pluck.symbol` so outline mode remains
+    // predictably cheaper than cat.
     for e in &o.entries {
         let prefix = match e.kind {
             ChunkKind::Method => "  ",
@@ -147,9 +159,27 @@ fn render_symbols(o: &Outline) -> String {
         };
         let sig = compact_signature(&e.signature);
         writeln!(out, "{prefix}L{}-{} {sig}", e.start_line, e.end_line).unwrap();
+        if let Some(body) = &e.inline_body {
+            for line in body.lines() {
+                writeln!(out, "{prefix}  {line}").unwrap();
+            }
+        }
     }
 
     out
+}
+
+fn inline_body_for(c: &Chunk, remaining_budget: &mut usize) -> Option<String> {
+    let line_count = c.end_line.saturating_sub(c.start_line) + 1;
+    if line_count <= INLINE_BODY_MAX_LINES
+        && c.content.len() <= INLINE_BODY_MAX_BYTES
+        && c.content.len() <= *remaining_budget
+    {
+        *remaining_budget = remaining_budget.saturating_sub(c.content.len());
+        Some(c.content.clone())
+    } else {
+        None
+    }
 }
 
 /// Strip leading visibility/modifier noise so the signature reads compactly.
@@ -206,8 +236,25 @@ mod tests {
         assert!(rendered.starts_with("big.ts ("));
         assert!(rendered.contains("L1-4 "));
         assert!(rendered.contains("fn_0"));
-        // Signature only — no body content duplicated.
-        assert!(!rendered.contains("console.log"));
+        // Tiny bodies inline so one read can answer trivial helper questions.
+        assert!(rendered.contains("console.log"));
+    }
+
+    #[test]
+    fn long_bodies_stay_out_of_outline() {
+        let mut src = String::new();
+        for i in 0..12 {
+            src.push_str(&format!("function fn_{i}(x: number): number {{\n"));
+            for _ in 0..8 {
+                src.push_str("  x = x * 2 + 1;\n");
+            }
+            src.push_str("  return x;\n}\n\n");
+        }
+        let o = outline_source(&src, Some(Language::TypeScript), "long.ts");
+        assert_eq!(o.mode, OutlineMode::Symbols);
+        let rendered = render(&o);
+        assert!(rendered.contains("fn_0"));
+        assert!(!rendered.contains("x = x * 2 + 1"));
     }
 
     #[test]

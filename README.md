@@ -68,7 +68,7 @@ When AI agents use standard `cat` and `grep` to explore a codebase, they waste m
 
 pluck solves this by providing an **agent-facing layer** for code search. Its core principle: **every retrieval call an agent makes should default to pluck.** Bash is only the fallback when pluck legitimately can't help (e.g., binary files, paths outside the repo).
 
-- **Smart Outline (`pluck.read`)**: Instead of dumping a 1,000-line file, it returns a token-efficient outline of signatures. The agent can then fetch only the function bodies it needs.
+- **Smart Outline (`pluck.read`)**: Instead of dumping a 1,000-line file, it returns a token-efficient outline of signatures with tiny helper bodies inline. The agent can then fetch only the larger function bodies it needs.
 - **Session Dedup**: If an agent searches for "auth" and later searches for "token", any overlapping code chunks are replaced with a 1-token placeholder (`[already-shown: ...]`). The bytes are already in the agent's context; repeating them is pure waste.
 - **Lossless Default**: Stripping comments or dropping types hurts the agent's decision-making. pluck keeps the original bytes intact and makes lossy modes strictly opt-in.
 - **100% Capability Guarantee**: Every pluck tool has a `--raw` fallback that behaves exactly like `cat` or `grep` byte-for-byte.
@@ -141,14 +141,14 @@ These are the invariants in [`benchmarks/baseline.json`](benchmarks/baseline.jso
 
 ### Eligible read-token savings
 
-`pluck.read` outline mode is where pluck stops agents from paying the `cat` tax: instead of dumping every line, it returns the file's symbol map and lets the agent fetch bodies on demand.
+`pluck.read` outline mode is where pluck stops agents from paying the `cat` tax: instead of dumping every line, it returns the file's symbol map, inlines tiny helper bodies, and lets the agent fetch larger bodies on demand.
 
 | Read workload | `cat` tokens | `pluck.read` tokens | Savings |
 |---------------|-------------:|--------------------:|--------:|
 | medium realistic (5 fns, ~120 lines) | 929 | 116 | **88 %** |
 | large realistic (25 fns, ~600 lines) | 4 549 | 556 | **88 %** |
 | xl realistic (100 fns, ~2 400 lines) | 18 124 | 2 320 | **87 %** |
-| class (1 class + 50 methods) | 8 608 | 1 277 | **85 %** |
+| class (1 class + 50 methods) | 8 608 | 1 302 | **85 %** |
 
 Tiny files and `raw` reads are control cases: they are expected to show little or no savings because byte-exact fallback is the point.
 
