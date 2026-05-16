@@ -53,20 +53,27 @@ brew tap hunhee98/pluck && brew install pluck
 
 **Claude Code**
 ```bash
-pluck init --target claude
-pluck init --target claude --mode aggressive  # Bash cat/rg 검색까지 차단
+pluck init --target claude --mode aggressive  # MCP + 권한 + Bash 검색 차단
 ```
 *(수동으로 추가하려면 `/plugin marketplace add hunhee98/pluck`을 입력해도 돼요)*
 
 **Codex**
 ```bash
-pluck init --target codex
+pluck init --target codex --mode strong  # MCP + AGENTS.md pluck-first 정책
 ```
 
 **Cursor**
 ```bash
-pluck init --target cursor
+pluck init --target cursor --mode strong  # MCP + always-apply Cursor rule
 ```
+
+**MCP를 지원하는 다른 에이전트**
+
+[범용 에이전트 설치 프롬프트](docs/AGENT_INSTALL.md)를 에이전트에
+붙여 넣으면 돼요. 이 프롬프트는 pluck을 설치하고
+`pluckd --repo <repo-root>`를 등록한 뒤, 해당 에이전트가 지원하는 가장
+강한 강제 레이어(MCP allowlist, tool permission, command blocker, hook,
+project rule)를 쓰도록 지시해요.
 
 ## 왜 pluck을 써야 할까요?
 

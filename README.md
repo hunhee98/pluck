@@ -57,20 +57,26 @@ brew tap hunhee98/pluck && brew install pluck
 
 **Claude Code**
 ```bash
-pluck init --target claude
-pluck init --target claude --mode aggressive  # also blocks Bash cat/rg retrieval
+pluck init --target claude --mode aggressive  # MCP + permissions + Bash retrieval block
 ```
 *(Alternatively, you can manually enable it via `/plugin marketplace add hunhee98/pluck`)*
 
 **Codex**
 ```bash
-pluck init --target codex
+pluck init --target codex --mode strong  # MCP + AGENTS.md pluck-first policy
 ```
 
 **Cursor**
 ```bash
-pluck init --target cursor
+pluck init --target cursor --mode strong  # MCP + always-apply Cursor rule
 ```
+
+**Any MCP-capable agent**
+
+Paste the [universal agent install prompt](docs/AGENT_INSTALL.md) into the
+agent. It installs pluck, registers `pluckd --repo <repo-root>`, and asks the
+agent to use the strongest enforcement layer it supports: MCP allowlists,
+tool permissions, command blockers, hooks, or project rules.
 
 ## Why pluck?
 

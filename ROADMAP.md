@@ -141,6 +141,8 @@ released as `0.4.0`, not `0.3.1`.
 
 - [x] Java chunker: class, interface, record, annotation type, enum, method,
       constructor, imports, and direct callees.
+- [x] Universal agent install prompt: unknown MCP agents can self-configure
+      pluck with the strongest available allowlist / hook / rule layer.
 - [ ] HTML chunker: semantic elements, component-ish blocks, script/style
       sections.
 - [ ] CSS / SCSS chunker: selector and at-rule chunks.
