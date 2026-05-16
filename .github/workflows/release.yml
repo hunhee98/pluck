@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload release gate artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-gate-results-${{ github.run_id }}
           path: benchmarks/results/
@@ -76,7 +76,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust toolchain from rust-toolchain.toml
         run: |
           rustup show
@@ -102,7 +102,7 @@ jobs:
               -czf dist/pluck-${{ matrix.target }}.tar.gz \
               pluck pluckd
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: pluck-${{ matrix.target }}
           path: dist/
@@ -114,7 +114,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           path: dist/
@@ -129,7 +129,7 @@ jobs:
     needs: github_release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
       - uses: Swatinem/rust-cache@v2
