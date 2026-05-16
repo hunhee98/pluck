@@ -120,7 +120,7 @@ recall argument.
 - [x] Per-language NL recall breakdown.
 - [x] Hangul / CJK retrieval-accuracy bench.
 - [x] NDCG@10 measurement infrastructure.
-- [ ] Continuous α from query embedding (replace
+- [x] Continuous α from query embedding (replace
       `is_natural_language_query` heuristic with two centroid
       dot-products).
 - [x] BM25 stopword filter.

@@ -81,7 +81,7 @@ pluck solves this by providing an **agent-facing layer** for code search. Its co
 
 ## How it works
 
-pluck chunks files at the Abstract Syntax Tree (AST) level using Tree-sitter. When an agent queries, pluck ranks these chunks using a hybrid of keyword matching (BM25F over symbol/signature/content) and semantic similarity (a static `model2vec`-style lookup, [`potion-code-16M`](https://huggingface.co/minishlab/potion-code-16M), ~60 MB on disk — no transformer inference at runtime). Search expands natural-language BM25 queries with embedding-nearest terms from the indexed repo, then runs a two-stage cascade: BM25F first widens the candidate pool, embeddings rerank that pool, and a smaller semantic-rescue pass catches concept queries with weak lexical overlap. The rankings fuse via reciprocal-rank fusion, so agents can search by concept ("payment flow") rather than guessing exact variable names.
+pluck chunks files at the Abstract Syntax Tree (AST) level using Tree-sitter. When an agent queries, pluck ranks these chunks using a hybrid of keyword matching (BM25F over symbol/signature/content) and semantic similarity (a static `model2vec`-style lookup, [`potion-code-16M`](https://huggingface.co/minishlab/potion-code-16M), ~60 MB on disk — no transformer inference at runtime). Search expands natural-language BM25 queries with embedding-nearest terms from the indexed repo, then runs a two-stage cascade: BM25F first widens the candidate pool, embeddings rerank that pool, and a smaller semantic-rescue pass catches concept queries with weak lexical overlap. The RRF blend is picked continuously from the query embedding against natural-language and code centroids, so agents can search by concept ("payment flow") without losing precision on exact symbols.
 
 <!-- GPT IMAGE PROMPT: A clean, modern architectural diagram showing how 'pluck' works. It should show 'Source files' going into 'Tree-sitter AST chunking', splitting into 'tantivy BM25F index' and 'static model2vec embedding (potion-code-16M)'. These feed into an 'in-RAM index' managed by 'pluckd MCP daemon'. An 'Agent query' comes in, goes through 'BM25 + semantic RRF', 'Noise cutoff', 'Session dedup', and finally returns a 'Ranked snippet'. Use a dark theme with neon green and blue accents. -->
 <p align="center">
@@ -197,7 +197,7 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 
 - **v0.2.0**: First crates.io publish, MCP tools, session dedup, smart outline,
   and expanded surface — `digest`, `impact`, `deps`, `plan`.
-- **v0.3.0**: Natural-language recall — query expansion, two-stage cascade, NDCG@10 measurement.
+- **v0.3.0**: Natural-language recall — query expansion, two-stage cascade, continuous hybrid weighting, NDCG@10 measurement.
 - **v0.4.0**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
 - **v0.5.0**: Adoption-rate counter, tool-description A/B harness, LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
 

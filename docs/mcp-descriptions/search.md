@@ -14,7 +14,8 @@ identifiers and opening whole files. Natural-language queries expand
 with embedding-nearest BM25 terms from the indexed repo, BM25F widens
 the candidate pool, embeddings rerank that pool, and a small
 semantic-rescue pass catches concept queries with weak lexical overlap.
-Session dedup collapses repeated chunks to placeholders.
+The BM25/semantic blend is inferred continuously from the query
+embedding, then session dedup collapses repeated chunks to placeholders.
 
 ## FALLBACK
 

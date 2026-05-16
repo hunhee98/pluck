@@ -24,6 +24,7 @@ Agent query
   ├─ Hit BM25F index with a wide candidate pool
   ├─ Rerank BM25 candidates by embedding similarity
   ├─ Add small global semantic-rescue pool
+  ├─ Infer continuous BM25/semantic weight from query centroids
   ├─ Fuse BM25 + cascade + semantic rescue (RRF)
   ├─ Rank + filter (12% noise cutoff)
   ├─ Session dedup (skip chunks already returned this session)
