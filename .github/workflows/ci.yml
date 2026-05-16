@@ -64,19 +64,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Install Rust toolchain from rust-toolchain.toml
-        run: rustup show
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-
-      - name: Install runtime dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ripgrep
-
       - name: Prepare benchmark output directory
         run: mkdir -p benchmarks/results
 
@@ -96,13 +83,31 @@ jobs:
           else
             echo "run_gate=false" >> "$GITHUB_OUTPUT"
             {
-              echo "Regression gate skipped."
+              echo "Benchmark and regression gate skipped."
               echo
               echo "No engine-core, MCP session, gated benchmark, baseline, Cargo, or Rust toolchain files changed."
             } > benchmarks/results/regression-gate.log
+            cp benchmarks/results/regression-gate.log benchmarks/results/cargo-bench.log
           fi
 
+      - name: Install Rust toolchain from rust-toolchain.toml
+        if: steps.gate_changes.outputs.run_gate == 'true'
+        run: rustup show
+
+      - name: Cache Cargo
+        if: steps.gate_changes.outputs.run_gate == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install runtime dependencies
+        if: steps.gate_changes.outputs.run_gate == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+
       - name: Run benches
+        if: steps.gate_changes.outputs.run_gate == 'true'
         shell: bash
         run: |
           set -euo pipefail
