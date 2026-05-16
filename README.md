@@ -204,7 +204,7 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 - **v0.3.0 — shipped**: Natural-language recall — 100-query suite across
   tokio / django / next.js, query expansion, two-stage cascade, continuous
   hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
-- **v0.4.0 — next**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
+- **v0.4.0 — next**: Language coverage — Java landed; C / C++, Kotlin, Ruby, PHP, Swift next.
 - **v0.5.0**: Adoption-rate counter, tool-description A/B harness,
   LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
 

@@ -17,6 +17,7 @@ tree-sitter-typescript.workspace = true
 tree-sitter-javascript.workspace = true
 tree-sitter-python.workspace = true
 tree-sitter-go.workspace = true
+tree-sitter-java.workspace = true
 tantivy.workspace = true
 rusqlite.workspace = true
 notify.workspace = true
