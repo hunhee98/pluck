@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo bench --all 2>&1 | tee benchmarks/results/cargo-bench.log
+          cargo bench --all --benches 2>&1 | tee benchmarks/results/cargo-bench.log
           if [[ -d target/criterion ]]; then
             mkdir -p benchmarks/results/criterion
             cp -R target/criterion/. benchmarks/results/criterion/
