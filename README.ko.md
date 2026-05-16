@@ -191,10 +191,6 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 
 ## 로드맵
 
-<p align="center">
-  <img src="assets/images/roadmap.png" alt="Roadmap">
-</p>
-
 - **v0.2.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인,
   확장된 검색 표면 — `digest`, `impact`, `deps`, `plan`.
 - **v0.3.0**: 자연어 리콜 품질 — 쿼리 확장, 2단계 cascade, NDCG@10 측정.
