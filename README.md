@@ -171,7 +171,7 @@ Tiny files and `raw` reads are control cases: they are expected to show little o
 | bash (`rg + cat`) | 1 248 | [`fix-auth-token-expiry-1778750775.json`](benchmarks/results/fix-auth-token-expiry-1778750775.json) |
 | **pluck** (`search + read + symbol`) | **931 (−25 %)** | same file |
 
-Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `search` / `review` scenarios are roadmapped as v0.5.0 work. We'll publish those numbers when they exist, not before.
+Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `search` / `review` scenarios are roadmapped as v0.8.0 work. We'll publish those numbers when they exist, not before.
 
 ### Feature Comparison
 
@@ -180,7 +180,7 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 | Hybrid BM25 + semantic ranking | ✗ | typically ✓ | ✓ |
 | AST-level chunks | ✗ | typically ✓ | ✓ |
 | Persistent daemon (MCP stdio) | — | ✗ (cold CLI per call) | **✓** |
-| Persistent on-disk index (mmap) | — | usually ✗ | ✗ — roadmapped (SOON) |
+| Persistent on-disk index (mmap) | — | usually ✗ | ✗ — roadmapped (v0.7.0) |
 | Incremental reindex (file watcher) | — | usually ✗ | **✓ — 171 ms p50** |
 | **Session-scoped dedup** | — | ✗ | **✓ — 23 % savings on bench** |
 | **`--raw` cat/grep byte parity** | — | ✗ | **✓** |
@@ -204,9 +204,19 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 - **v0.3.0 — shipped**: Natural-language recall — 100-query suite across
   tokio / django / next.js, query expansion, two-stage cascade, continuous
   hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
-- **v0.4.0 — next**: Language coverage — Java landed; C / C++, Kotlin, Ruby, PHP, Swift next.
-- **v0.5.0**: Adoption-rate counter, tool-description A/B harness,
-  LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
+- **v0.4.0 — next**: Java + repo-format coverage — HTML, CSS/SCSS,
+  Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell.
+- **v0.5.0**: Systems + JVM tier — C, C++, Kotlin, SQL, Terraform/HCL.
+- **v0.6.0**: App-framework tier — Ruby, PHP, Swift, Vue, Svelte, Astro,
+  OpenAPI / GraphQL.
+- **v0.7.0**: Scale + persistence — mmap index, schema versioning,
+  incremental embedding re-encode, memory/disk caps.
+- **v0.8.0**: Adoption + observability — adoption counter, tool-description
+  A/B harness, LLM-in-loop bench, multilingual tool descriptions.
+- **v0.9.0**: Workflow intelligence + ecosystem — JSON output, `diff`,
+  `history`, `profile`, Aider / OpenHands / Cursor / Cline / Continue.
+- **v1.0.0**: Stable default retrieval layer — stable MCP/CLI contracts,
+  benchmark dashboard, release checklist, config migration, supply-chain review.
 
 ## License
 
