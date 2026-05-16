@@ -5,20 +5,24 @@
 //! top — signals the IR pipeline can't see because they live in the
 //! chunk metadata (path, symbol, kind) rather than the indexed text.
 //!
-//! Three boosts apply in order, then we re-sort by the adjusted score:
+//! Four boosts apply in order, then we re-sort by the adjusted score:
 //!
 //!   1. Symbol-match boost — chunks whose `symbol` field exactly equals
 //!      a query token climb 50 %. BM25F already weights the `symbol`
 //!      field; this layers an extra "this *is* the thing they asked for"
 //!      bonus on top.
-//!   2. Sibling-chunk boost — files that contributed more than one
+//!   2. Symbol/path component boost — compound symbols and paths are
+//!      split like the index tokenizer, so prose queries containing
+//!      `http response`, `read string`, or `base path` can lift
+//!      `HttpResponse`, `read_to_string`, or `remove-base-path`.
+//!   3. Sibling-chunk boost — files that contributed more than one
 //!      chunk to the candidate pool get every contributing chunk lifted
 //!      by ~5 % per additional sibling, capped at +25 %. Models the
 //!      "if half the file is relevant, the relevant chunks deserve a
 //!      lift, not just the strongest one" intuition. The cap is the
 //!      cap so a huge file can't run away with the
 //!      ranking.
-//!   3. Test-file penalty — chunks under `test/`, `tests/`, `__tests__/`,
+//!   4. Test-file penalty — chunks under `test/`, `tests/`, `__tests__/`,
 //!      `.test.`, `.spec.`, `_test.`, `_spec.` lose 50 % of their score
 //!      unless the query itself mentions "test" or "spec". Test files
 //!      are usually noise when the agent is looking for production code.
@@ -26,14 +30,25 @@
 //! All knobs live as constants below so a future per-query tuner can
 //! override them or a benchmark can A/B-test them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::index::SearchHit;
+use crate::tokenizer::split_identifier;
 
 const SYMBOL_MATCH_BOOST: f32 = 1.5;
+const SYMBOL_COMPONENT_BOOST_PER_HIT: f32 = 0.10;
+const SYMBOL_COMPONENT_COVERAGE_BOOST: f32 = 0.25;
+const SYMBOL_COMPONENT_BOOST_CAP: f32 = 0.50;
+const PATH_COMPONENT_BOOST_PER_HIT: f32 = 0.04;
+const PATH_COMPONENT_BOOST_CAP: f32 = 0.20;
 const SIBLING_BOOST_PER_EXTRA: f32 = 0.05;
 const SIBLING_BOOST_CAP: f32 = 0.25; // +25 % maximum
 const TEST_FILE_PENALTY: f32 = 0.5; // ×0.5
+const RANKING_STOPWORDS: &[&str] = &[
+    "a", "all", "an", "and", "as", "at", "be", "by", "class", "code", "current", "data", "do",
+    "for", "from", "get", "how", "in", "into", "is", "it", "model", "models", "new", "object",
+    "objects", "of", "on", "one", "or", "set", "the", "to", "value", "values", "with",
+];
 
 /// Apply every post-fusion boost in `hits` in place, then re-sort by
 /// the adjusted score (descending). `query` is the original user query
@@ -43,14 +58,10 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
     if hits.is_empty() {
         return;
     }
-    let q_lower = query.to_lowercase();
-    let q_tokens: Vec<&str> = q_lower
-        .split(|c: char| !c.is_alphanumeric() && c != '_')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let q_tokens = ranking_terms(query);
     let query_mentions_tests = q_tokens
         .iter()
-        .any(|t| *t == "test" || *t == "tests" || *t == "spec" || *t == "specs");
+        .any(|t| t == "test" || t == "tests" || t == "spec" || t == "specs");
 
     // Count candidate chunks per file for the sibling-chunk boost.
     let mut chunks_per_file: HashMap<String, usize> = HashMap::new();
@@ -61,18 +72,33 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
     for h in hits.iter_mut() {
         // 1. Symbol-match boost.
         let sym_lower = h.symbol.to_lowercase();
-        if q_tokens.iter().any(|t| *t == sym_lower) {
+        if q_tokens.iter().any(|t| t == &sym_lower) {
             h.score *= SYMBOL_MATCH_BOOST;
         }
 
-        // 2. Sibling-chunk boost.
+        // 2. Symbol/path component boost.
+        let symbol_terms = ranking_terms(&h.symbol);
+        let symbol_overlap = overlap_count(&q_tokens, &symbol_terms);
+        if symbol_overlap > 0 {
+            let coverage = symbol_overlap as f32 / symbol_terms.len().max(1) as f32;
+            let raw = symbol_overlap as f32 * SYMBOL_COMPONENT_BOOST_PER_HIT
+                + coverage * SYMBOL_COMPONENT_COVERAGE_BOOST;
+            h.score *= 1.0 + raw.min(SYMBOL_COMPONENT_BOOST_CAP);
+        }
+        let path_overlap = overlap_count(&q_tokens, &ranking_terms(&h.path));
+        if path_overlap > 0 {
+            let raw = path_overlap as f32 * PATH_COMPONENT_BOOST_PER_HIT;
+            h.score *= 1.0 + raw.min(PATH_COMPONENT_BOOST_CAP);
+        }
+
+        // 3. Sibling-chunk boost.
         let n = chunks_per_file.get(&h.path).copied().unwrap_or(1);
         if n > 1 {
             let raw = (n - 1) as f32 * SIBLING_BOOST_PER_EXTRA;
             h.score *= 1.0 + raw.min(SIBLING_BOOST_CAP);
         }
 
-        // 3. Test-file penalty.
+        // 4. Test-file penalty.
         if !query_mentions_tests && is_test_path(&h.path) {
             h.score *= TEST_FILE_PENALTY;
         }
@@ -83,6 +109,32 @@ pub fn apply_boosts(hits: &mut [SearchHit], query: &str) {
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+}
+
+fn overlap_count(query_terms: &HashSet<String>, candidate_terms: &HashSet<String>) -> usize {
+    query_terms.intersection(candidate_terms).count()
+}
+
+fn ranking_terms(text: &str) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for raw in text.split(|c: char| !c.is_alphanumeric() && c != '_') {
+        if raw.is_empty() {
+            continue;
+        }
+        push_ranking_term(raw, &mut out);
+        for part in split_identifier(raw) {
+            push_ranking_term(&part, &mut out);
+        }
+    }
+    out
+}
+
+fn push_ranking_term(raw: &str, out: &mut HashSet<String>) {
+    let term = raw.to_lowercase();
+    if term.len() < 2 || RANKING_STOPWORDS.contains(&term.as_str()) {
+        return;
+    }
+    out.insert(term);
 }
 
 pub fn is_test_path(path: &str) -> bool {
@@ -140,6 +192,40 @@ mod tests {
         ];
         apply_boosts(&mut hits, "render");
         assert_eq!(hits[0].symbol, "render"); // 1.0 × 1.5 = 1.5 wins
+    }
+
+    #[test]
+    fn symbol_component_boost_splits_compound_identifiers() {
+        let mut hits = vec![
+            hit("django/http/response.py", "HttpResponse", 1.0),
+            hit("django/http/response.py", "HttpResponseBase", 1.0),
+            hit("django/core/handlers/base.py", "get_response", 1.1),
+        ];
+        apply_boosts(&mut hits, "build plain http response object");
+        assert_eq!(hits[0].symbol, "HttpResponse");
+    }
+
+    #[test]
+    fn path_component_boost_splits_route_like_paths() {
+        let mut hits = vec![
+            hit("src/client/remove-base-path.ts", "removeBasePath", 1.0),
+            hit("src/server/web/next-url.ts", "resolveUrl", 1.08),
+        ];
+        apply_boosts(&mut hits, "remove configured base path from url");
+        assert_eq!(hits[0].symbol, "removeBasePath");
+    }
+
+    #[test]
+    fn component_boost_ignores_generic_domain_words() {
+        let mut hits = vec![
+            hit("django/db/models/query.py", "query", 1.0),
+            hit("django/contrib/postgres/fields/array.py", "model", 1.05),
+        ];
+        apply_boosts(
+            &mut hits,
+            "chain database query operations lazily on a model",
+        );
+        assert_eq!(hits[0].symbol, "query");
     }
 
     #[test]
