@@ -1,4 +1,4 @@
-//! Labeled recall@K bench for natural-language hybrid search.
+//! Labeled recall@K / NDCG@10 bench for natural-language hybrid search.
 //!
 //! Gated by `PLUCK_RUN_RECALL_BENCH=1` because it loads the embedding
 //! model and, when present, indexes the real tokio checkout.
@@ -10,194 +10,74 @@ use anyhow::{Context, Result};
 use pluck_core::chunker::{chunk_file, chunk_source, Language};
 use pluck_core::index::{PluckIndex, SearchHit};
 use pluck_core::semantic::{selected_model_id, StaticEncoder};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Deserialize)]
 struct Label {
-    path: &'static str,
-    symbol: &'static str,
+    path: String,
+    symbol: String,
+    relevance: u8,
 }
 
+#[derive(Clone, Deserialize)]
 struct QueryCase {
-    query: &'static str,
-    labels: &'static [Label],
+    query: String,
+    labels: Vec<Label>,
 }
 
+#[derive(Clone, Deserialize)]
+struct Dataset {
+    name: String,
+    kind: DatasetKind,
+    cases: Vec<QueryCase>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum DatasetKind {
+    SyntheticRust,
+    TokioRust,
+}
+
+#[derive(Deserialize)]
+struct QualitySuite {
+    datasets: Vec<Dataset>,
+}
+
+#[derive(Clone, Copy, Default)]
 struct Metrics {
     recall5: usize,
     recall10: usize,
     reciprocal_rank_sum: f32,
+    ndcg10_sum: f32,
 }
 
-const SYNTHETIC_CASES: &[QueryCase] = &[
-    QueryCase {
-        query: "validate user credential token",
-        labels: &[Label {
-            path: "auth.rs",
-            symbol: "validate_bearer",
-        }],
-    },
-    QueryCase {
-        query: "persist customer invoice payment",
-        labels: &[Label {
-            path: "billing.rs",
-            symbol: "charge_primary_card",
-        }],
-    },
-    QueryCase {
-        query: "limit repeated client requests",
-        labels: &[Label {
-            path: "rate.rs",
-            symbol: "too_many_requests",
-        }],
-    },
-    QueryCase {
-        query: "refresh stale cached value",
-        labels: &[Label {
-            path: "cache.rs",
-            symbol: "refresh_entry",
-        }],
-    },
-    QueryCase {
-        query: "retry network call after transient error",
-        labels: &[Label {
-            path: "network.rs",
-            symbol: "retry_request",
-        }],
-    },
-    QueryCase {
-        query: "remove expired sessions",
-        labels: &[Label {
-            path: "session.rs",
-            symbol: "prune_expired_sessions",
-        }],
-    },
-    QueryCase {
-        query: "parse incoming webhook payload",
-        labels: &[Label {
-            path: "webhook.rs",
-            symbol: "decode_webhook",
-        }],
-    },
-    QueryCase {
-        query: "schedule background cleanup job",
-        labels: &[Label {
-            path: "jobs.rs",
-            symbol: "enqueue_cleanup",
-        }],
-    },
-    QueryCase {
-        query: "check whether feature flag is active",
-        labels: &[Label {
-            path: "flags.rs",
-            symbol: "flag_enabled",
-        }],
-    },
-    QueryCase {
-        query: "redact private fields before logging",
-        labels: &[Label {
-            path: "audit.rs",
-            symbol: "redact_sensitive",
-        }],
-    },
-    QueryCase {
-        query: "normalize email address casing",
-        labels: &[Label {
-            path: "identity.rs",
-            symbol: "canonical_email",
-        }],
-    },
-    QueryCase {
-        query: "serialize response as json",
-        labels: &[Label {
-            path: "http.rs",
-            symbol: "render_json",
-        }],
-    },
-];
+#[derive(Serialize)]
+struct SuiteReport {
+    model: String,
+    alpha: String,
+    datasets: Vec<DatasetReport>,
+}
 
-const TOKIO_CASES: &[QueryCase] = &[
-    QueryCase {
-        query: "spawn a task on the runtime",
-        labels: &[
-            Label {
-                path: "tokio/src/runtime/runtime.rs",
-                symbol: "spawn",
-            },
-            Label {
-                path: "tokio/src/runtime/handle.rs",
-                symbol: "spawn",
-            },
-            Label {
-                path: "tokio/src/task/spawn.rs",
-                symbol: "spawn",
-            },
-        ],
-    },
-    QueryCase {
-        query: "receive value from channel asynchronously",
-        labels: &[
-            Label {
-                path: "tokio/src/sync/mpsc/bounded.rs",
-                symbol: "recv",
-            },
-            Label {
-                path: "tokio/src/sync/mpsc/unbounded.rs",
-                symbol: "recv",
-            },
-            Label {
-                path: "tokio/src/sync/broadcast.rs",
-                symbol: "recv",
-            },
-        ],
-    },
-    QueryCase {
-        query: "pause execution for a duration",
-        labels: &[Label {
-            path: "tokio/src/time/sleep.rs",
-            symbol: "sleep",
-        }],
-    },
-    QueryCase {
-        query: "read bytes into a buffer",
-        labels: &[
-            Label {
-                path: "tokio/src/io/util/async_read_ext.rs",
-                symbol: "read_buf",
-            },
-            Label {
-                path: "tokio/src/io/util/read_buf.rs",
-                symbol: "read_buf",
-            },
-        ],
-    },
-    QueryCase {
-        query: "mutually exclusive access shared state",
-        labels: &[Label {
-            path: "tokio/src/sync/mutex.rs",
-            symbol: "lock",
-        }],
-    },
-    QueryCase {
-        query: "exclusive writer access to shared state",
-        labels: &[Label {
-            path: "tokio/src/sync/rwlock.rs",
-            symbol: "write",
-        }],
-    },
-    QueryCase {
-        query: "run blocking work on a dedicated thread pool",
-        labels: &[
-            Label {
-                path: "tokio/src/runtime/runtime.rs",
-                symbol: "spawn_blocking",
-            },
-            Label {
-                path: "tokio/src/task/blocking.rs",
-                symbol: "spawn_blocking",
-            },
-        ],
-    },
-];
+#[derive(Serialize)]
+struct DatasetReport {
+    name: String,
+    queries: usize,
+    recall5: f32,
+    recall10: f32,
+    mrr: f32,
+    ndcg10: f32,
+    cases: Vec<CaseReport>,
+}
+
+#[derive(Serialize)]
+struct CaseReport {
+    query: String,
+    rank: Option<usize>,
+    reciprocal_rank: f32,
+    ndcg10: f32,
+    top_hit: Option<String>,
+}
 
 fn synthetic_repo() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -268,9 +148,9 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 fn rank_of(hits: &[SearchHit], labels: &[Label]) -> Option<usize> {
     hits.iter().position(|hit| {
-        labels
-            .iter()
-            .any(|label| hit.path == label.path && hit.symbol == label.symbol)
+        labels.iter().any(|label| {
+            hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str()
+        })
     })
 }
 
@@ -279,18 +159,53 @@ fn fmt_rank(rank: Option<usize>) -> String {
         .unwrap_or_else(|| "miss".to_string())
 }
 
+fn relevance_for(hit: &SearchHit, labels: &[Label]) -> u8 {
+    labels
+        .iter()
+        .filter(|label| {
+            hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str()
+        })
+        .map(|label| label.relevance)
+        .max()
+        .unwrap_or(0)
+}
+
+fn dcg(relevances: impl IntoIterator<Item = u8>) -> f32 {
+    relevances
+        .into_iter()
+        .enumerate()
+        .map(|(idx, rel)| {
+            let gain = 2_f32.powi(rel as i32) - 1.0;
+            gain / ((idx as f32 + 2.0).log2())
+        })
+        .sum()
+}
+
+fn ndcg_at_10(hits: &[SearchHit], labels: &[Label]) -> f32 {
+    let actual = dcg(
+        hits.iter()
+            .take(10)
+            .map(|hit| relevance_for(hit, labels)),
+    );
+    let mut ideal: Vec<u8> = labels.iter().map(|label| label.relevance).collect();
+    ideal.sort_unstable_by(|a, b| b.cmp(a));
+    let ideal = dcg(ideal.into_iter().take(10));
+    if ideal == 0.0 {
+        0.0
+    } else {
+        actual / ideal
+    }
+}
+
 fn measure(idx: &PluckIndex, cases: &[QueryCase], alpha: Option<f32>) -> Metrics {
-    let mut metrics = Metrics {
-        recall5: 0,
-        recall10: 0,
-        reciprocal_rank_sum: 0.0,
-    };
+    let mut metrics = Metrics::default();
 
     for case in cases {
         let hits = idx
-            .search_hybrid(case.query, 10, 0.0, alpha)
+            .search_hybrid(&case.query, 10, 0.0, alpha)
             .unwrap_or_else(|e| panic!("search {:?}: {e}", case.query));
-        if let Some(rank) = rank_of(&hits, case.labels) {
+        metrics.ndcg10_sum += ndcg_at_10(&hits, &case.labels);
+        if let Some(rank) = rank_of(&hits, &case.labels) {
             if rank < 5 {
                 metrics.recall5 += 1;
             }
@@ -304,15 +219,48 @@ fn measure(idx: &PluckIndex, cases: &[QueryCase], alpha: Option<f32>) -> Metrics
     metrics
 }
 
-fn print_summary_row(label: &str, cases: &[QueryCase], idx: &PluckIndex, alpha: Option<f32>) {
+fn dataset_report(
+    name: &str,
+    cases: &[QueryCase],
+    idx: &PluckIndex,
+    alpha: Option<f32>,
+) -> DatasetReport {
     let metrics = measure(idx, cases, alpha);
     let total = cases.len() as f32;
+    let mut case_reports = Vec::with_capacity(cases.len());
+    for case in cases {
+        let hits = idx.search_hybrid(&case.query, 10, 0.0, alpha).unwrap();
+        let rank = rank_of(&hits, &case.labels);
+        let reciprocal_rank = rank.map(|r| 1.0 / (r as f32 + 1.0)).unwrap_or(0.0);
+        let ndcg10 = ndcg_at_10(&hits, &case.labels);
+        let top_hit = hits
+            .first()
+            .map(|hit| format!("{}::{}", hit.path, hit.symbol));
+        case_reports.push(CaseReport {
+            query: case.query.clone(),
+            rank: rank.map(|idx| idx + 1),
+            reciprocal_rank,
+            ndcg10,
+            top_hit,
+        });
+    }
+
+    DatasetReport {
+        name: name.to_string(),
+        queries: cases.len(),
+        recall5: metrics.recall5 as f32 / total,
+        recall10: metrics.recall10 as f32 / total,
+        mrr: metrics.reciprocal_rank_sum / total,
+        ndcg10: metrics.ndcg10_sum / total,
+        cases: case_reports,
+    }
+}
+
+fn print_summary_row(report: &DatasetReport) {
     println!(
-        "| {label} | {} | {:.3} | {:.3} | {:.3} |",
-        cases.len(),
-        metrics.recall5 as f32 / total,
-        metrics.recall10 as f32 / total,
-        metrics.reciprocal_rank_sum / total
+        "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} |",
+        report.name, report.queries, report.recall5, report.recall10, report.mrr,
+        report.ndcg10
     );
 }
 
@@ -322,14 +270,46 @@ fn print_details(name: &str, cases: &[QueryCase], idx: &PluckIndex, alpha: Optio
     println!("| Query | Rank | Top hit |");
     println!("|-------|-----:|---------|");
     for case in cases {
-        let hits = idx.search_hybrid(case.query, 10, 0.0, alpha).unwrap();
-        let rank = rank_of(&hits, case.labels);
+        let hits = idx.search_hybrid(&case.query, 10, 0.0, alpha).unwrap();
+        let rank = rank_of(&hits, &case.labels);
         let top = hits
             .first()
             .map(|hit| format!("{}::{}", hit.path, hit.symbol))
             .unwrap_or_else(|| "(none)".to_string());
         println!("| `{}` | {} | `{}` |", case.query, fmt_rank(rank), top);
     }
+}
+
+fn suite_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../benchmarks/quality/recall.json")
+}
+
+fn load_suite() -> Result<QualitySuite> {
+    let path = suite_path();
+    let raw = std::fs::read_to_string(&path)
+        .with_context(|| format!("read quality suite {}", path.display()))?;
+    serde_json::from_str(&raw).with_context(|| format!("parse quality suite {}", path.display()))
+}
+
+fn default_report_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../benchmarks/results/recall-quality.json")
+}
+
+fn write_report(report: &SuiteReport) -> Result<()> {
+    let path = std::env::var("PLUCK_RECALL_OUTPUT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| default_report_path());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create report dir {}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(report)?;
+    std::fs::write(&path, format!("{json}\n"))
+        .with_context(|| format!("write recall report {}", path.display()))?;
+    eprintln!("recall report saved -> {}", path.display());
+    Ok(())
 }
 
 fn parse_alpha_sweep() -> Option<Vec<Option<f32>>> {
@@ -369,6 +349,7 @@ fn main() -> Result<()> {
 
     let model_id = selected_model_id();
     let encoder = Arc::new(StaticEncoder::load_or_fetch(&model_id)?);
+    let suite = load_suite()?;
 
     let synthetic_idx = PluckIndex::in_ram()?.with_encoder(Arc::clone(&encoder));
     add_synthetic(&synthetic_idx)?;
@@ -383,32 +364,67 @@ fn main() -> Result<()> {
     println!("model: `{model_id}`");
 
     let alphas = parse_alpha_sweep().unwrap_or_else(|| vec![None]);
+    let mut first_report: Option<SuiteReport> = None;
 
     for alpha in &alphas {
         println!();
         println!("alpha: `{}`", label_for(*alpha));
         println!();
-        println!("| Dataset | Queries | Recall@5 | Recall@10 | MRR |");
-        println!("|---------|--------:|---------:|----------:|----:|");
-        print_summary_row("synthetic", SYNTHETIC_CASES, &synthetic_idx, *alpha);
-        if has_tokio {
-            print_summary_row("tokio", TOKIO_CASES, &tokio_idx, *alpha);
-        } else {
-            eprintln!(
-                "tokio dataset skipped — {} does not exist",
-                tokio_root.display()
-            );
+        println!("| Dataset | Queries | Recall@5 | Recall@10 | MRR | NDCG@10 |");
+        println!("|---------|--------:|---------:|----------:|----:|--------:|");
+
+        let mut reports = Vec::new();
+        for dataset in &suite.datasets {
+            match dataset.kind {
+                DatasetKind::SyntheticRust => {
+                    let report =
+                        dataset_report(&dataset.name, &dataset.cases, &synthetic_idx, *alpha);
+                    print_summary_row(&report);
+                    reports.push(report);
+                }
+                DatasetKind::TokioRust if has_tokio => {
+                    let report = dataset_report(&dataset.name, &dataset.cases, &tokio_idx, *alpha);
+                    print_summary_row(&report);
+                    reports.push(report);
+                }
+                DatasetKind::TokioRust => {
+                    eprintln!(
+                        "{} dataset skipped — {} does not exist",
+                        dataset.name,
+                        tokio_root.display()
+                    );
+                }
+            }
+        }
+
+        if first_report.is_none() {
+            first_report = Some(SuiteReport {
+                model: model_id.clone(),
+                alpha: label_for(*alpha),
+                datasets: reports,
+            });
         }
     }
 
     // Per-query detail only for the first alpha; otherwise the output
     // gets unwieldy.
     let detail_alpha = alphas[0];
-    print_details("synthetic", SYNTHETIC_CASES, &synthetic_idx, detail_alpha);
-    if has_tokio {
-        print_details("tokio", TOKIO_CASES, &tokio_idx, detail_alpha);
+    for dataset in &suite.datasets {
+        match dataset.kind {
+            DatasetKind::SyntheticRust => {
+                print_details(&dataset.name, &dataset.cases, &synthetic_idx, detail_alpha);
+            }
+            DatasetKind::TokioRust if has_tokio => {
+                print_details(&dataset.name, &dataset.cases, &tokio_idx, detail_alpha);
+            }
+            DatasetKind::TokioRust => {}
+        }
     }
     println!();
+
+    if let Some(report) = &first_report {
+        write_report(report)?;
+    }
 
     Ok(())
 }

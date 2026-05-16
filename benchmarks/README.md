@@ -20,6 +20,7 @@ benchmarks/
 │   ├── bash.yaml         (Claude Code + Bash only — baseline)
 │   ├── ripgrep.yaml      (Claude Code + ripgrep)
 │   └── pluck.yaml        (Claude Code + pluck MCP)
+├── quality/          labeled retrieval datasets for recall / NDCG benches
 ├── repos/            git submodules pointing at fixed revisions of test repos
 └── results/          per-run JSON output (gitignored after Phase 0)
 ```
@@ -49,3 +50,24 @@ See `scenarios/fix/auth-token-expiry.yaml` for the canonical example. Fields:
 | `mcp_servers` | MCP entries to register before the session |
 | `tools` | Allowed tool list |
 | `prompt_suffix` | Optional snippet appended to the prompt (e.g. "prefer pluck.*") |
+
+## Retrieval quality format
+
+`quality/recall.json` is the v0.3 labeled retrieval suite. Each case has a
+natural-language query and one or more relevant `(path, symbol)` labels with a
+graded relevance score:
+
+| Relevance | Meaning |
+|-----------|---------|
+| `3` | Primary target for the query |
+| `2` | Acceptable alternate target |
+| `1` | Weakly relevant supporting target |
+
+Run it locally with:
+
+```bash
+PLUCK_RUN_RECALL_BENCH=1 cargo bench -p pluck-core --bench recall
+```
+
+The bench prints Recall@5, Recall@10, MRR, and NDCG@10, then writes
+`benchmarks/results/recall-quality.json`.

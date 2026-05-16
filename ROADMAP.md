@@ -113,7 +113,9 @@ recall argument.
 
 - [ ] Two-stage cascade — widen BM25 candidate pool, embed-rerank.
 - [ ] Query expansion via embedding-nearest BM25 vocab terms.
-- [ ] Labeled NL recall@K test set (100 queries across tokio,
+- [x] Labeled retrieval suite format with Recall@K / MRR / NDCG@10
+      reporting.
+- [ ] Expand labeled NL recall@K test set to 100 queries across tokio,
       django, next.js).
 - [ ] Per-language NL recall breakdown.
 - [ ] Hangul / CJK retrieval-accuracy bench.
