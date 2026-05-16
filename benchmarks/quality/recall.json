@@ -80,7 +80,9 @@
     },
     {
       "name": "tokio-rust",
-      "kind": "tokio-rust",
+      "kind": "repo-backed",
+      "root_env": "PLUCK_RECALL_TOKIO_ROOT",
+      "root_default": "/tmp/tokio",
       "cases": [
         {
           "query": "spawn a task on the runtime",
