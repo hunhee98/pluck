@@ -167,7 +167,7 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 | bash (`rg + cat`) | 1 248 | [`fix-auth-token-expiry-1778750775.json`](benchmarks/results/fix-auth-token-expiry-1778750775.json) |
 | **pluck** (`search + read + symbol`) | **931 (−25 %)** | 동일 파일 |
 
-`fix` / `refactor` / `explore` / `search` / `review` 시나리오 전반에 걸친 LLM-in-the-loop 측정은 v0.5.0 작업으로 잡혀 있어요. 측정되기 전엔 적지 않아요.
+`fix` / `refactor` / `explore` / `search` / `review` 시나리오 전반에 걸친 LLM-in-the-loop 측정은 v0.8.0 작업으로 잡혀 있어요. 측정되기 전엔 적지 않아요.
 
 ### 기능(Capability) 비교
 
@@ -176,7 +176,7 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 | Hybrid BM25 + 시맨틱 랭킹 | ✗ | 대체로 ✓ | ✓ |
 | AST 수준 청크 분할 | ✗ | 대체로 ✓ | ✓ |
 | 영구 데몬 (MCP stdio) | — | ✗ (호출 시마다 콜드 CLI 실행) | **✓** |
-| 영구 디스크 인덱스 (mmap) | — | 대체로 ✗ | ✗ — 로드맵 (SOON) |
+| 영구 디스크 인덱스 (mmap) | — | 대체로 ✗ | ✗ — 로드맵 (v0.7.0) |
 | 증분 재색인 (파일 감시자) | — | 대체로 ✗ | **✓ — 171 ms p50** |
 | **세션 범위 내 중복 제거** | — | ✗ | **✓ — 벤치 기준 23 % 절감** |
 | **`--raw` cat/grep 바이트 동등성** | — | ✗ | **✓** |
@@ -198,8 +198,19 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 - **v0.2.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인,
   확장된 검색 표면 — `digest`, `impact`, `deps`, `plan`.
 - **v0.3.0**: 자연어 리콜 품질 — 쿼리 확장, 2단계 cascade, NDCG@10 측정.
-- **v0.4.0**: 언어 커버리지 — Java 완료, 다음은 C / C++, Kotlin, Ruby, PHP, Swift.
-- **v0.5.0**: 채택률 카운터, 툴 설명 A/B 하네스, LLM-in-loop 벤치, Aider / OpenHands / Cursor hook.
+- **v0.4.0**: Java + 레포 포맷 커버리지 — HTML, CSS/SCSS,
+  Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell.
+- **v0.5.0**: 시스템 + JVM 티어 — C, C++, Kotlin, SQL, Terraform/HCL.
+- **v0.6.0**: 앱 프레임워크 티어 — Ruby, PHP, Swift, Vue, Svelte, Astro,
+  OpenAPI / GraphQL.
+- **v0.7.0**: 스케일 + 영속성 — mmap index, schema versioning,
+  incremental embedding re-encode, memory/disk cap.
+- **v0.8.0**: 채택 + 관측성 — adoption counter, tool-description A/B harness,
+  LLM-in-loop bench, 다국어 tool description.
+- **v0.9.0**: 워크플로우 지능 + 생태계 — JSON output, `diff`, `history`,
+  `profile`, Aider / OpenHands / Cursor / Cline / Continue.
+- **v1.0.0**: 안정적인 기본 retrieval layer — stable MCP/CLI contract,
+  benchmark dashboard, release checklist, config migration, supply-chain review.
 
 ## 라이선스
 
