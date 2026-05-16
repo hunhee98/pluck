@@ -79,6 +79,14 @@ Full numbers under `benchmarks/results/` after every nightly run.
 | 71% shorter output | Median `pluck.digest` compression across 6 build / test / CI fixtures |
 | 23% session savings | 5-query session-dedup bench, including first-call control cases |
 
+## Retrieval Quality
+
+`crates/pluck-core/benches/recall.rs` reads
+`benchmarks/quality/recall.json` and reports Recall@5, Recall@10, MRR,
+NDCG@10, per-query ranks, and per-language breakdowns. Repo-backed datasets
+are skipped when their checkout is unavailable, so CI can compile the bench
+without requiring large external repos.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on PRs and `main` pushes. It runs tests,
