@@ -1,3 +1,7 @@
+<p align="right">
+  <a href="README.ko.md">한국어로 보기</a>
+</p>
+
 <h2 align="center">
   <!-- GPT IMAGE PROMPT: A sleek, modern logo for 'pluck', an AI code search tool. The logo should feature a stylized bird or feather motif, or a fast-moving abstract shape, with a clean tech-focused aesthetic. Use vibrant green and dark blue tones. Transparent background. -->
   <img width="30%" alt="pluck logo" src="assets/images/pluck_logo.png"><br/>
