@@ -27,6 +27,17 @@ use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 /// index agree on tokenization.
 pub const TOKENIZER_NAME: &str = "pluck";
 
+const BM25_STOPWORDS: &[&str] = &[
+    "a", "about", "after", "all", "also", "am", "an", "and", "any", "are", "as", "at", "be",
+    "been", "being", "but", "by", "can", "could", "did", "do", "does", "doing", "done", "during",
+    "else", "for", "from", "had", "has", "have", "having", "he", "her", "here", "hers", "him",
+    "his", "how", "i", "if", "in", "into", "is", "it", "its", "may", "might", "must", "my", "of",
+    "on", "onto", "or", "our", "ours", "over", "she", "should", "so", "such", "than", "that",
+    "the", "their", "theirs", "them", "then", "there", "these", "they", "this", "those", "to",
+    "under", "until", "up", "was", "we", "were", "what", "when", "where", "which", "while", "who",
+    "whom", "whose", "why", "will", "with", "without", "would", "you", "your", "yours",
+];
+
 fn ident_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| Regex::new(r"[\p{L}_][\p{L}\p{N}_]*").expect("compile IDENT_RE"))
@@ -162,6 +173,28 @@ pub fn split_identifier(token: &str) -> Vec<String> {
     }
 }
 
+/// Tokenize a natural-language BM25 query and drop high-frequency
+/// function words. This is deliberately query-side only: source code
+/// can use words like `for`, `in`, or `use` as meaningful lexical
+/// evidence, so the index keeps every token intact.
+pub fn bm25_query_terms(query: &str) -> Vec<String> {
+    let mut tokenizer = PluckTokenizer;
+    let mut stream = tokenizer.token_stream(query);
+    let mut terms = Vec::new();
+    while stream.advance() {
+        let token = &stream.token().text;
+        if is_bm25_stopword(token) || terms.iter().any(|existing| existing == token) {
+            continue;
+        }
+        terms.push(token.clone());
+    }
+    terms
+}
+
+pub fn is_bm25_stopword(token: &str) -> bool {
+    BM25_STOPWORDS.binary_search(&token).is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,5 +282,29 @@ mod tests {
     fn tokenizer_drops_pure_punctuation() {
         let toks = tokens_of("() {} ;; --");
         assert!(toks.is_empty());
+    }
+
+    #[test]
+    fn bm25_query_terms_drop_stopwords_and_dedupe() {
+        let terms = bm25_query_terms("How do I validate the user token for the user?");
+        assert_eq!(terms, vec!["validate", "user", "token"]);
+    }
+
+    #[test]
+    fn bm25_query_terms_keep_identifier_parts() {
+        let terms = bm25_query_terms("find AuthTokenExpiry in handleLogin");
+        assert_eq!(
+            terms,
+            vec![
+                "find",
+                "authtokenexpiry",
+                "auth",
+                "token",
+                "expiry",
+                "handlelogin",
+                "handle",
+                "login"
+            ]
+        );
     }
 }

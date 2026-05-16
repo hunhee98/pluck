@@ -25,7 +25,7 @@ use tantivy::{
 use crate::chunker::{Chunk, ChunkKind};
 use crate::ranking::apply_boosts;
 use crate::semantic::{cosine_similarity, StaticEncoder};
-use crate::tokenizer::{PluckTokenizer, TOKENIZER_NAME};
+use crate::tokenizer::{bm25_query_terms, PluckTokenizer, TOKENIZER_NAME};
 
 /// BM25F per-field boosts.
 ///
@@ -274,7 +274,8 @@ impl PluckIndex {
         let reader = self.inner.reader().context("open reader")?;
         let searcher = reader.searcher();
         let qp = self.bm25f_query_parser(include_doc_comment);
-        let query = qp.parse_query(query_str).context("parse query")?;
+        let bm25_query = normalized_bm25_query(query_str);
+        let query = qp.parse_query(&bm25_query).context("parse query")?;
         let top = searcher
             .search(&query, &TopDocs::with_limit(k).order_by_score())
             .context("search")?;
@@ -906,9 +907,28 @@ fn has_identifier_pattern(tokens: &[&str]) -> bool {
 }
 
 fn has_camel_case_shape(token: &str) -> bool {
-    let has_lower = token.chars().any(|c| c.is_ascii_lowercase());
-    let has_upper = token.chars().any(|c| c.is_ascii_uppercase());
-    has_lower && has_upper
+    let mut saw_lower = false;
+    for ch in token.chars() {
+        if ch.is_ascii_lowercase() {
+            saw_lower = true;
+        } else if ch.is_ascii_uppercase() && saw_lower {
+            return true;
+        }
+    }
+    false
+}
+
+fn normalized_bm25_query(query: &str) -> String {
+    if !is_natural_language_query(query) {
+        return query.to_string();
+    }
+
+    let terms = bm25_query_terms(query);
+    if terms.is_empty() {
+        query.to_string()
+    } else {
+        terms.join(" ")
+    }
 }
 
 pub struct IndexBatch {
@@ -1174,8 +1194,21 @@ function unrelatedHelper(): void {}
             inferred_rrf_alpha("receive value from channel asynchronously"),
             0.7
         );
+        assert_eq!(inferred_rrf_alpha("How do I validate token"), 0.7);
         assert_eq!(inferred_rrf_alpha("Runtime::spawn future"), 0.5);
         assert_eq!(inferred_rrf_alpha("validateToken"), 0.5);
+    }
+
+    #[test]
+    fn bm25_query_filter_only_normalizes_natural_language() {
+        assert_eq!(
+            normalized_bm25_query("How do I validate the token for the user?"),
+            "validate token user"
+        );
+        assert_eq!(
+            normalized_bm25_query("keyword_3 OR keyword_7"),
+            "keyword_3 OR keyword_7"
+        );
     }
 
     #[test]
