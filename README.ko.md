@@ -2,7 +2,7 @@
   <!-- GPT IMAGE PROMPT: A sleek, modern logo for 'pluck', an AI code search tool. The logo should feature a stylized bird or feather motif, or a fast-moving abstract shape, with a clean tech-focused aesthetic. Use vibrant green and dark blue tones. Transparent background. -->
   <img width="30%" alt="pluck logo" src="assets/images/pluck_logo.png"><br/>
   AI 코딩 에이전트를 위한 MCP-네이티브 코드 검색기<br/>
-  <sub>웜 검색 0.07 ms · 파일 저장 → 검색 가능 171 ms · CI 로그 압축 71 % — 모든 수치는 <a href="benchmarks/baseline.json"><code>benchmarks/baseline.json</code></a>의 게이트된 값이에요</sub>
+  <sub>코드 읽기 토큰 84-88 % 절감 · CI 로그 71 % 압축 · 웜 검색 0.07 ms — 모든 수치는 <a href="benchmarks/baseline.json"><code>benchmarks/baseline.json</code></a>의 게이트된 값이에요</sub>
 </h2>
 
 <div align="center">
@@ -22,7 +22,7 @@
 
 </div>
 
-**pluck**은 AI 에이전트가 코드를 읽고 검색할 때 사용하는 `cat`과 `grep`을 대체하는 로컬 Rust 데몬이에요. MCP(Model Context Protocol)를 통해 심볼(Symbol)을 인식해서 코드를 읽고 검색할 수 있게 해줘요. 1밀리초 미만의 빠른 웜 검색, AST 기반 청크화, 세션 중복 제거를 제공하면서, 모든 툴에 `--raw` 폴백을 제공해 에이전트가 pluck을 기본으로 써도 기능 손실이 전혀 없어요.
+**pluck**은 AI 에이전트가 코드를 읽고 검색할 때 사용하는 `cat`과 `grep`을 대체하는 로컬 Rust 데몬이에요. MCP(Model Context Protocol)를 통해 심볼(Symbol)을 인식해서 코드를 읽고 검색할 수 있게 해줘요. 스마트 아웃라인은 절감 대상 코드 읽기 토큰을 **84-88 %** 줄이고, CI 로그는 **71 %** 압축하며, 웜 검색은 1밀리초 미만으로 유지돼요. 모든 툴에 `--raw` 폴백을 제공해 에이전트가 pluck을 기본으로 써도 기능 손실이 전혀 없어요.
 
 ```
 pluck 없이:  ls → grep → cat file1 → cat file2 → cat file3 → ...
@@ -138,6 +138,19 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 | 파일 저장 → 검색 가능 p50 | **171 ms** | `freshness_p50_ms_medium` |
 | 세션 중복 제거 절감률 (5-쿼리 벤치) | **23 %** | `session_dedup_session_savings_pct` |
 | `pluck.digest` 로그 압축률 (6개 fixture 중앙값) | **71 %** | `digest_savings_pct` |
+
+### 절감 대상 코드 읽기 토큰 절감
+
+`pluck.read` 아웃라인 모드는 에이전트가 `cat` 비용을 그대로 내지 않게 해줘요. 파일 전체를 쏟아내는 대신 심볼 맵을 반환하고, 에이전트는 필요한 본문만 가져오면 돼요.
+
+| 읽기 워크로드 | `cat` 토큰 | `pluck.read` 토큰 | 절감률 |
+|---------------|-----------:|------------------:|-------:|
+| medium realistic (함수 5개, 약 120줄) | 929 | 116 | **88 %** |
+| large realistic (함수 25개, 약 600줄) | 4 549 | 556 | **88 %** |
+| xl realistic (함수 100개, 약 2 400줄) | 18 124 | 2 320 | **87 %** |
+| class (클래스 1개 + 메서드 50개) | 8 608 | 1 277 | **85 %** |
+
+작은 파일과 `raw` 읽기는 control case예요. 바이트 단위 폴백이 목적이라 절감률이 거의 없거나 0 %인 게 정상이에요.
 
 ### 실측 단일 시나리오 토큰 절감
 

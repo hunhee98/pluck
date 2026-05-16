@@ -2,7 +2,7 @@
   <!-- GPT IMAGE PROMPT: A sleek, modern logo for 'pluck', an AI code search tool. The logo should feature a stylized bird or feather motif, or a fast-moving abstract shape, with a clean tech-focused aesthetic. Use vibrant green and dark blue tones. Transparent background. -->
   <img width="30%" alt="pluck logo" src="assets/images/pluck_logo.png"><br/>
   The MCP-native Code Retrieval Engine for AI Agents<br/>
-  <sub>0.07 ms warm search · 171 ms save → searchable · 71 % CI-log compression — every number gated by <a href="benchmarks/baseline.json"><code>benchmarks/baseline.json</code></a></sub>
+  <sub>84-88 % fewer tokens on code reads · 71 % shorter CI logs · 0.07 ms warm search — every number gated by <a href="benchmarks/baseline.json"><code>benchmarks/baseline.json</code></a></sub>
 </h2>
 
 <div align="center">
@@ -22,7 +22,7 @@
 
 </div>
 
-**pluck** is a local Rust daemon that replaces `cat` and `grep` as the default way AI agents read and search code. It exposes symbol-aware code reading and search to agents over the Model Context Protocol (MCP). Sub-millisecond warm search, AST-level chunking, and session-aware deduplication — with a `--raw` fallback on every tool so the agent never loses capability by defaulting to pluck.
+**pluck** is a local Rust daemon that replaces `cat` and `grep` as the default way AI agents read and search code. It exposes symbol-aware code reading and search to agents over the Model Context Protocol (MCP). Smart outlines cut eligible code-read tokens by **84-88 %**, CI logs compress by **71 %**, and warm search stays sub-millisecond — with a `--raw` fallback on every tool so the agent never loses capability by defaulting to pluck.
 
 ```
 Without pluck:  ls → grep → cat file1 → cat file2 → cat file3 → ...
@@ -138,6 +138,19 @@ These are the invariants in [`benchmarks/baseline.json`](benchmarks/baseline.jso
 | File save → searchable p50 | **171 ms** | `freshness_p50_ms_medium` |
 | Session-dedup savings (5-query bench) | **23 %** | `session_dedup_session_savings_pct` |
 | `pluck.digest` log compression (median of 6 fixtures) | **71 %** | `digest_savings_pct` |
+
+### Eligible read-token savings
+
+`pluck.read` outline mode is where pluck stops agents from paying the `cat` tax: instead of dumping every line, it returns the file's symbol map and lets the agent fetch bodies on demand.
+
+| Read workload | `cat` tokens | `pluck.read` tokens | Savings |
+|---------------|-------------:|--------------------:|--------:|
+| medium realistic (5 fns, ~120 lines) | 929 | 116 | **88 %** |
+| large realistic (25 fns, ~600 lines) | 4 549 | 556 | **88 %** |
+| xl realistic (100 fns, ~2 400 lines) | 18 124 | 2 320 | **87 %** |
+| class (1 class + 50 methods) | 8 608 | 1 277 | **85 %** |
+
+Tiny files and `raw` reads are control cases: they are expected to show little or no savings because byte-exact fallback is the point.
 
 ### Measured single-scenario token reduction
 
