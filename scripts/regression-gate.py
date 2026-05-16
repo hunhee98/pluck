@@ -147,10 +147,18 @@ def compare(baseline: dict, measured: dict[str, float]) -> int:
             continue
         delta_pct = (measured_v - baseline_v) / baseline_v * 100.0
         regressed = False
-        if direction == "higher" and delta_pct > tol_pct:
-            regressed = True
-        elif direction == "lower" and delta_pct < -tol_pct:
-            regressed = True
+        max_value = spec.get("max_value")
+        min_value = spec.get("min_value")
+        if direction == "higher":
+            if max_value is not None:
+                regressed = measured_v > float(max_value)
+            else:
+                regressed = delta_pct > tol_pct
+        elif direction == "lower":
+            if min_value is not None:
+                regressed = measured_v < float(min_value)
+            else:
+                regressed = delta_pct < -tol_pct
         status = "FAIL" if regressed else "ok"
         unit = spec.get("unit", "")
         print(

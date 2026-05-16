@@ -70,9 +70,13 @@ Full numbers under `benchmarks/results/` after every nightly run.
 
 ## CI
 
-`.github/workflows/benchmark.yml` runs weekly. Output is uploaded as a build
-artifact and published to the dashboard. Regressions of more than 10% on any
-scenario open an issue automatically.
+`.github/workflows/ci.yml` runs on PRs and `main` pushes. It runs tests,
+benchmark harnesses, uploads `benchmarks/results/`, and runs
+`scripts/regression-gate.py` when engine-core or benchmark files change.
+
+`.github/workflows/nightly-benchmark.yml` runs the full scenario suite on a
+schedule or via manual dispatch. Output is uploaded as a build artifact; the
+public dashboard is the next step.
 
 ## Local run
 

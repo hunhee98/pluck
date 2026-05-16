@@ -1,0 +1,136 @@
+{
+  "datasets": [
+    {
+      "name": "synthetic-rust",
+      "kind": "synthetic-rust",
+      "cases": [
+        {
+          "query": "validate user credential token",
+          "labels": [
+            { "path": "auth.rs", "symbol": "validate_bearer", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "persist customer invoice payment",
+          "labels": [
+            { "path": "billing.rs", "symbol": "charge_primary_card", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "limit repeated client requests",
+          "labels": [
+            { "path": "rate.rs", "symbol": "too_many_requests", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "refresh stale cached value",
+          "labels": [
+            { "path": "cache.rs", "symbol": "refresh_entry", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "retry network call after transient error",
+          "labels": [
+            { "path": "network.rs", "symbol": "retry_request", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "remove expired sessions",
+          "labels": [
+            { "path": "session.rs", "symbol": "prune_expired_sessions", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "parse incoming webhook payload",
+          "labels": [
+            { "path": "webhook.rs", "symbol": "decode_webhook", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "schedule background cleanup job",
+          "labels": [
+            { "path": "jobs.rs", "symbol": "enqueue_cleanup", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "check whether feature flag is active",
+          "labels": [
+            { "path": "flags.rs", "symbol": "flag_enabled", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "redact private fields before logging",
+          "labels": [
+            { "path": "audit.rs", "symbol": "redact_sensitive", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "normalize email address casing",
+          "labels": [
+            { "path": "identity.rs", "symbol": "canonical_email", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "serialize response as json",
+          "labels": [
+            { "path": "http.rs", "symbol": "render_json", "relevance": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tokio-rust",
+      "kind": "tokio-rust",
+      "cases": [
+        {
+          "query": "spawn a task on the runtime",
+          "labels": [
+            { "path": "src/runtime/runtime.rs", "symbol": "spawn", "relevance": 3 },
+            { "path": "src/runtime/handle.rs", "symbol": "spawn", "relevance": 3 },
+            { "path": "src/task/spawn.rs", "symbol": "spawn", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "receive value from channel asynchronously",
+          "labels": [
+            { "path": "src/sync/mpsc/bounded.rs", "symbol": "recv", "relevance": 3 },
+            { "path": "src/sync/mpsc/unbounded.rs", "symbol": "recv", "relevance": 3 },
+            { "path": "src/sync/broadcast.rs", "symbol": "recv", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "pause execution for a duration",
+          "labels": [
+            { "path": "src/time/sleep.rs", "symbol": "sleep", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read bytes into a buffer",
+          "labels": [
+            { "path": "src/io/util/async_read_ext.rs", "symbol": "read_buf", "relevance": 3 },
+            { "path": "src/io/util/read_buf.rs", "symbol": "read_buf", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "mutually exclusive access shared state",
+          "labels": [
+            { "path": "src/sync/mutex.rs", "symbol": "lock", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "exclusive writer access to shared state",
+          "labels": [
+            { "path": "src/sync/rwlock.rs", "symbol": "write", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "run blocking work on a dedicated thread pool",
+          "labels": [
+            { "path": "src/runtime/runtime.rs", "symbol": "spawn_blocking", "relevance": 3 },
+            { "path": "src/task/blocking.rs", "symbol": "spawn_blocking", "relevance": 2 }
+          ]
+        }
+      ]
+    }
+  ]
+}

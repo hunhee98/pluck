@@ -1,0 +1,115 @@
+name: Nightly Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario to run: all, or a pluck-bench scenario name"
+        required: false
+        default: all
+      runners:
+        description: "Runner filter passed to pluck-bench: all, bash, pluck, or comma-separated"
+        required: false
+        default: all
+      repetitions:
+        description: "Number of repetitions per scenario"
+        required: false
+        default: "3"
+  schedule:
+    - cron: "0 17 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  # Claude-backed runners should read this secret when they are enabled.
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+jobs:
+  full-scenario-benchmark:
+    name: full scenario benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup show
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: Build benchmark binaries
+        run: cargo build --release --bin pluck-bench --bin pluckd
+
+      - name: Run full scenario benchmark
+        shell: bash
+        env:
+          INPUT_SCENARIO: ${{ inputs.scenario || 'all' }}
+          INPUT_RUNNERS: ${{ inputs.runners || 'all' }}
+          INPUT_REPETITIONS: ${{ inputs.repetitions || '3' }}
+        run: |
+          set -euo pipefail
+          mkdir -p benchmarks/results/logs
+
+          if [[ "$INPUT_SCENARIO" == "all" ]]; then
+            mapfile -t scenarios < <(cargo run --release --quiet --bin pluck-bench -- list)
+          else
+            scenarios=("$INPUT_SCENARIO")
+          fi
+
+          {
+            echo "# Nightly Benchmark"
+            echo
+            echo "- runners: $INPUT_RUNNERS"
+            echo "- repetitions: $INPUT_REPETITIONS"
+            echo "- scenarios: ${scenarios[*]}"
+            echo
+          } | tee benchmarks/results/nightly-summary.md
+
+          for scenario in "${scenarios[@]}"; do
+            safe_name="${scenario//\//-}"
+            echo "=== scenario=$scenario runners=$INPUT_RUNNERS repetitions=$INPUT_REPETITIONS ===" | tee "benchmarks/results/logs/${safe_name}.log"
+            cargo run --release --quiet --bin pluck-bench -- run \
+              --scenario "$scenario" \
+              --runner "$INPUT_RUNNERS" \
+              --repetitions "$INPUT_REPETITIONS" \
+              --output benchmarks/results/ \
+              2>&1 | tee -a "benchmarks/results/logs/${safe_name}.log"
+          done
+
+      - name: Generate benchmark report
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo run --release --quiet --bin pluck-bench -- report \
+            --input benchmarks/results/ \
+            --markdown 2>&1 | tee benchmarks/results/nightly-report.md
+
+      - name: Upload nightly benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-benchmark-results-${{ github.run_id }}
+          path: benchmarks/results/
+          if-no-files-found: error
+          retention-days: 30

@@ -23,7 +23,8 @@ expand, session dedup).
 | Core MCP (6 base tools wired, descriptions at handshake) | ✅ shipped |
 | Semantic + incremental (RRF, watcher, session dedup) | ✅ shipped |
 | Regression gate (6 frozen metrics, baseline.json) | ✅ shipped |
-| Plugin + release infra | 🟡 partial — pending v0.1.0 publish |
+| CI + release gates | ✅ shipped — PR test/bench artifacts, release regression gate |
+| Plugin + release infra | 🟡 partial — pending broader agent installers |
 | Retrieval quality (peek / expand / BM25F / ranking) | 🟡 partial — NDCG@10 lands in v0.3.0 |
 
 ---
@@ -87,7 +88,24 @@ pluck ships 10. None of these are catch-up — semble has none of them.
 
 ---
 
-## v0.3.0 — match and beat semble's NDCG@10
+## v0.3.0 — benchmark credibility + retrieval quality
+
+Before adding more surface area, make the public claims hard to argue
+with: reproducible CI, stable release gates, and labeled retrieval
+quality.
+
+### Release and benchmark infrastructure
+- [x] PR CI on `ubuntu-latest`: `cargo test --all`, bench artifacts,
+      and conditional regression gate comments on PRs.
+- [x] Release gate: tags must pass tests and `scripts/regression-gate.py`
+      before binaries or crates are published.
+- [x] Nightly/manual full scenario benchmark workflow with artifact
+      upload and a secret slot for Claude-backed runners.
+- [ ] Branch protection: require the CI check on `main`.
+- [ ] Publish benchmark artifacts to a public dashboard or release
+      attachment, not only ephemeral Actions artifacts.
+
+### Match and beat semble's NDCG@10
 
 **Target:** NDCG@10 ≥ 0.854 (semble's published number) on a
 comparable multi-repo benchmark. Until this ships, semble wins the
@@ -95,7 +113,9 @@ recall argument.
 
 - [ ] Two-stage cascade — widen BM25 candidate pool, embed-rerank.
 - [ ] Query expansion via embedding-nearest BM25 vocab terms.
-- [ ] Labeled NL recall@K test set (100 queries across tokio,
+- [x] Labeled retrieval suite format with Recall@K / MRR / NDCG@10
+      reporting.
+- [ ] Expand labeled NL recall@K test set to 100 queries across tokio,
       django, next.js).
 - [ ] Per-language NL recall breakdown.
 - [ ] Hangul / CJK retrieval-accuracy bench.
