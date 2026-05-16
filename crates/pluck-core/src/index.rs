@@ -43,6 +43,15 @@ const BM25F_BOOST_CONTENT: f32 = 1.0;
 const WRITER_HEAP_BYTES: usize = 50_000_000;
 const QUERY_EXPANSION_TERMS: usize = 4;
 const QUERY_EXPANSION_MIN_SIM: f32 = 0.25;
+const DEFAULT_RRF_ALPHA: f32 = 0.5;
+const QUERY_ALPHA_CENTER: f32 = 0.6;
+const QUERY_ALPHA_MIN: f32 = 0.5;
+const QUERY_ALPHA_MAX: f32 = 0.75;
+const QUERY_ALPHA_DELTA_SCALE: f32 = 0.45;
+const QUERY_ALPHA_NATURAL_LANGUAGE_CENTROID_TEXT: &str =
+    "where is the request handled find code that validates user authentication token refresh cache";
+const QUERY_ALPHA_CODE_CENTROID_TEXT: &str =
+    "validate_token handleLogin Runtime::spawn get_user_by_id serde_json parse_http_request impl fn struct";
 
 type ExpansionVocab = HashMap<String, ExpansionVocabTerm>;
 
@@ -50,6 +59,21 @@ type ExpansionVocab = HashMap<String, ExpansionVocabTerm>;
 struct ExpansionVocabTerm {
     embedding: Vec<f32>,
     chunk_count: u32,
+}
+
+#[derive(Clone)]
+struct QueryAlphaCentroids {
+    natural_language: Vec<f32>,
+    code: Vec<f32>,
+}
+
+impl QueryAlphaCentroids {
+    fn from_encoder(encoder: &StaticEncoder) -> Result<Self> {
+        Ok(Self {
+            natural_language: encoder.encode(QUERY_ALPHA_NATURAL_LANGUAGE_CENTROID_TEXT)?,
+            code: encoder.encode(QUERY_ALPHA_CODE_CENTROID_TEXT)?,
+        })
+    }
 }
 
 pub struct PluckIndex {
@@ -70,6 +94,10 @@ pub struct PluckIndex {
     /// Populated only when `encoder` is set; stale terms after deletes
     /// are harmless because tantivy still decides the actual hits.
     expansion_vocab: Arc<RwLock<ExpansionVocab>>,
+    /// Query-shape anchors for continuous BM25/semantic weighting.
+    /// Built once from the attached encoder so each search only compares
+    /// the query embedding against two cached centroids.
+    query_alpha_centroids: Option<QueryAlphaCentroids>,
     /// Reverse caller index: callee leaf name (lowercased) → Vec of
     /// chunk_ids whose content calls that callee. Built incrementally
     /// in `add_chunk`; used by `impact()` for upstream blast-radius
@@ -154,6 +182,7 @@ impl PluckIndex {
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
             expansion_vocab: Arc::new(RwLock::new(HashMap::new())),
+            query_alpha_centroids: None,
             callers: Arc::new(RwLock::new(HashMap::new())),
             imports: Arc::new(RwLock::new(HashMap::new())),
         })
@@ -173,6 +202,7 @@ impl PluckIndex {
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
             expansion_vocab: Arc::new(RwLock::new(HashMap::new())),
+            query_alpha_centroids: None,
             callers: Arc::new(RwLock::new(HashMap::new())),
             imports: Arc::new(RwLock::new(HashMap::new())),
         })
@@ -181,6 +211,7 @@ impl PluckIndex {
     /// Attach an embedding encoder. Subsequent `add_chunk` calls will
     /// also store an embedding; `search_hybrid` becomes usable.
     pub fn with_encoder(mut self, encoder: Arc<StaticEncoder>) -> Self {
+        self.query_alpha_centroids = QueryAlphaCentroids::from_encoder(&encoder).ok();
         self.encoder = Some(encoder);
         self
     }
@@ -354,13 +385,13 @@ impl PluckIndex {
             return self.search_with_cutoff(query_str, k, cutoff_frac);
         };
 
-        let bm25_candidate_k = (k * BM25_OVERFETCH).max(BM25_MIN_CANDIDATES);
-        let semantic_rescue_k = (k * SEMANTIC_RESCUE_OVERFETCH).max(SEMANTIC_RESCUE_MIN_CANDIDATES);
+        let q_emb = encoder.encode(query_str)?;
         let semantic_alpha = alpha
-            .unwrap_or_else(|| inferred_rrf_alpha(query_str))
+            .unwrap_or_else(|| inferred_rrf_alpha(&q_emb, self.query_alpha_centroids.as_ref()))
             .clamp(0.0, 1.0);
         let bm25_alpha = 1.0 - semantic_alpha;
-        let q_emb = encoder.encode(query_str)?;
+        let bm25_candidate_k = (k * BM25_OVERFETCH).max(BM25_MIN_CANDIDATES);
+        let semantic_rescue_k = (k * SEMANTIC_RESCUE_OVERFETCH).max(SEMANTIC_RESCUE_MIN_CANDIDATES);
         let bm25_query = self.expanded_bm25_query(query_str, &q_emb);
 
         // Stage 1: widen the lexical pool aggressively. BM25F is cheap
@@ -416,10 +447,10 @@ impl PluckIndex {
             }
         }
 
-        // Weighted RRF fusion. For identifier-like queries BM25 and
-        // semantic stay balanced. Natural-language queries get a
-        // semantic-heavy alpha so prose-aligned hits are not drowned by
-        // lexical noise from large real repos.
+        // Weighted RRF fusion. The query embedding picks a continuous
+        // BM25/semantic mix by comparing against natural-language and
+        // code centroids, so concept searches lean semantic while exact
+        // symbol-ish searches stay close to the BM25 balance.
         let mut rrf: HashMap<u64, (SearchHit, f32)> =
             HashMap::with_capacity(bm25.len() + cascade_sem.len() + sem.len());
 
@@ -961,12 +992,24 @@ fn normalize_dots(path: &str) -> String {
     out.join("/")
 }
 
-fn inferred_rrf_alpha(query: &str) -> f32 {
-    if is_natural_language_query(query) {
-        0.7
-    } else {
-        0.5
+fn inferred_rrf_alpha(query_embedding: &[f32], centroids: Option<&QueryAlphaCentroids>) -> f32 {
+    let Some(centroids) = centroids else {
+        return DEFAULT_RRF_ALPHA;
+    };
+    if is_zero_embedding(query_embedding) {
+        return DEFAULT_RRF_ALPHA;
     }
+
+    // StaticEncoder normalizes vectors, so cosine similarity is the same
+    // ranking signal as the requested centroid dot product.
+    let natural_language_score = cosine_similarity(query_embedding, &centroids.natural_language);
+    let code_score = cosine_similarity(query_embedding, &centroids.code);
+    (QUERY_ALPHA_CENTER + (natural_language_score - code_score) * QUERY_ALPHA_DELTA_SCALE)
+        .clamp(QUERY_ALPHA_MIN, QUERY_ALPHA_MAX)
+}
+
+fn is_zero_embedding(embedding: &[f32]) -> bool {
+    embedding.iter().all(|v| v.abs() <= f32::EPSILON)
 }
 
 fn is_natural_language_query(query: &str) -> bool {
@@ -1413,14 +1456,26 @@ function unrelatedHelper(): void {}
     }
 
     #[test]
-    fn rrf_alpha_prefers_semantic_for_natural_language_queries() {
+    fn rrf_alpha_uses_centroid_similarity_continuously() {
+        let centroids = QueryAlphaCentroids {
+            natural_language: vec![1.0, 0.0],
+            code: vec![0.0, 1.0],
+        };
+
+        let natural_language = inferred_rrf_alpha(&[1.0, 0.0], Some(&centroids));
+        let mixed = inferred_rrf_alpha(&[1.0, 1.0], Some(&centroids));
+        let code = inferred_rrf_alpha(&[0.0, 1.0], Some(&centroids));
+
+        assert!((natural_language - QUERY_ALPHA_MAX).abs() < f32::EPSILON);
+        assert!((mixed - QUERY_ALPHA_CENTER).abs() < f32::EPSILON);
+        assert!((code - QUERY_ALPHA_MIN).abs() < f32::EPSILON);
+        assert!(natural_language > mixed);
+        assert!(mixed > code);
         assert_eq!(
-            inferred_rrf_alpha("receive value from channel asynchronously"),
-            0.7
+            inferred_rrf_alpha(&[0.0, 0.0], Some(&centroids)),
+            DEFAULT_RRF_ALPHA
         );
-        assert_eq!(inferred_rrf_alpha("How do I validate token"), 0.7);
-        assert_eq!(inferred_rrf_alpha("Runtime::spawn future"), 0.5);
-        assert_eq!(inferred_rrf_alpha("validateToken"), 0.5);
+        assert_eq!(inferred_rrf_alpha(&[1.0, 0.0], None), DEFAULT_RRF_ALPHA);
     }
 
     #[test]
