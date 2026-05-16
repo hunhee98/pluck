@@ -3,6 +3,7 @@
 //! Gated by `PLUCK_RUN_RECALL_BENCH=1` because it loads the embedding
 //! model and, when present, indexes the real tokio checkout.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -69,12 +70,24 @@ struct DatasetReport {
     recall10: f32,
     mrr: f32,
     ndcg10: f32,
+    by_language: Vec<LanguageReport>,
     cases: Vec<CaseReport>,
+}
+
+#[derive(Serialize)]
+struct LanguageReport {
+    language: String,
+    queries: usize,
+    recall5: f32,
+    recall10: f32,
+    mrr: f32,
+    ndcg10: f32,
 }
 
 #[derive(Serialize)]
 struct CaseReport {
     query: String,
+    language: String,
     rank: Option<usize>,
     reciprocal_rank: f32,
     ndcg10: f32,
@@ -158,9 +171,9 @@ fn collect_supported_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
 
 fn rank_of(hits: &[SearchHit], labels: &[Label]) -> Option<usize> {
     hits.iter().position(|hit| {
-        labels.iter().any(|label| {
-            hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str()
-        })
+        labels
+            .iter()
+            .any(|label| hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str())
     })
 }
 
@@ -172,9 +185,7 @@ fn fmt_rank(rank: Option<usize>) -> String {
 fn relevance_for(hit: &SearchHit, labels: &[Label]) -> u8 {
     labels
         .iter()
-        .filter(|label| {
-            hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str()
-        })
+        .filter(|label| hit.path == label.path.as_str() && hit.symbol == label.symbol.as_str())
         .map(|label| label.relevance)
         .max()
         .unwrap_or(0)
@@ -192,11 +203,7 @@ fn dcg(relevances: impl IntoIterator<Item = u8>) -> f32 {
 }
 
 fn ndcg_at_10(hits: &[SearchHit], labels: &[Label]) -> f32 {
-    let actual = dcg(
-        hits.iter()
-            .take(10)
-            .map(|hit| relevance_for(hit, labels)),
-    );
+    let actual = dcg(hits.iter().take(10).map(|hit| relevance_for(hit, labels)));
     let mut ideal: Vec<u8> = labels.iter().map(|label| label.relevance).collect();
     ideal.sort_unstable_by(|a, b| b.cmp(a));
     let ideal = dcg(ideal.into_iter().take(10));
@@ -207,6 +214,48 @@ fn ndcg_at_10(hits: &[SearchHit], labels: &[Label]) -> f32 {
     }
 }
 
+fn language_for_case(case: &QueryCase) -> String {
+    case.labels
+        .first()
+        .map(|label| language_for_path(&label.path))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn language_for_path(path: &str) -> String {
+    match Path::new(path).extension().and_then(|ext| ext.to_str()) {
+        Some("rs") => "rust",
+        Some("py") => "python",
+        Some("ts") | Some("tsx") => "typescript",
+        Some("js") | Some("jsx") => "javascript",
+        Some("go") => "go",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
+fn update_metrics(metrics: &mut Metrics, rank: Option<usize>, ndcg10: f32) {
+    metrics.ndcg10_sum += ndcg10;
+    if let Some(rank) = rank {
+        if rank < 5 {
+            metrics.recall5 += 1;
+        }
+        if rank < 10 {
+            metrics.recall10 += 1;
+        }
+        metrics.reciprocal_rank_sum += 1.0 / (rank as f32 + 1.0);
+    }
+}
+
+fn normalize_metrics(metrics: Metrics, total: usize) -> (f32, f32, f32, f32) {
+    let total = total as f32;
+    (
+        metrics.recall5 as f32 / total,
+        metrics.recall10 as f32 / total,
+        metrics.reciprocal_rank_sum / total,
+        metrics.ndcg10_sum / total,
+    )
+}
+
 fn measure(idx: &PluckIndex, cases: &[QueryCase], alpha: Option<f32>) -> Metrics {
     let mut metrics = Metrics::default();
 
@@ -214,19 +263,48 @@ fn measure(idx: &PluckIndex, cases: &[QueryCase], alpha: Option<f32>) -> Metrics
         let hits = idx
             .search_hybrid(&case.query, 10, 0.0, alpha)
             .unwrap_or_else(|e| panic!("search {:?}: {e}", case.query));
-        metrics.ndcg10_sum += ndcg_at_10(&hits, &case.labels);
-        if let Some(rank) = rank_of(&hits, &case.labels) {
-            if rank < 5 {
-                metrics.recall5 += 1;
-            }
-            if rank < 10 {
-                metrics.recall10 += 1;
-            }
-            metrics.reciprocal_rank_sum += 1.0 / (rank as f32 + 1.0);
-        }
+        update_metrics(
+            &mut metrics,
+            rank_of(&hits, &case.labels),
+            ndcg_at_10(&hits, &case.labels),
+        );
     }
 
     metrics
+}
+
+fn language_breakdown(
+    idx: &PluckIndex,
+    cases: &[QueryCase],
+    alpha: Option<f32>,
+) -> Vec<LanguageReport> {
+    let mut grouped: BTreeMap<String, (usize, Metrics)> = BTreeMap::new();
+    for case in cases {
+        let lang = language_for_case(case);
+        let hits = idx.search_hybrid(&case.query, 10, 0.0, alpha).unwrap();
+        let entry = grouped.entry(lang).or_default();
+        entry.0 += 1;
+        update_metrics(
+            &mut entry.1,
+            rank_of(&hits, &case.labels),
+            ndcg_at_10(&hits, &case.labels),
+        );
+    }
+
+    grouped
+        .into_iter()
+        .map(|(language, (queries, metrics))| {
+            let (recall5, recall10, mrr, ndcg10) = normalize_metrics(metrics, queries);
+            LanguageReport {
+                language,
+                queries,
+                recall5,
+                recall10,
+                mrr,
+                ndcg10,
+            }
+        })
+        .collect()
 }
 
 fn dataset_report(
@@ -236,7 +314,7 @@ fn dataset_report(
     alpha: Option<f32>,
 ) -> DatasetReport {
     let metrics = measure(idx, cases, alpha);
-    let total = cases.len() as f32;
+    let (recall5, recall10, mrr, ndcg10) = normalize_metrics(metrics, cases.len());
     let mut case_reports = Vec::with_capacity(cases.len());
     for case in cases {
         let hits = idx.search_hybrid(&case.query, 10, 0.0, alpha).unwrap();
@@ -248,6 +326,7 @@ fn dataset_report(
             .map(|hit| format!("{}::{}", hit.path, hit.symbol));
         case_reports.push(CaseReport {
             query: case.query.clone(),
+            language: language_for_case(case),
             rank: rank.map(|idx| idx + 1),
             reciprocal_rank,
             ndcg10,
@@ -258,10 +337,11 @@ fn dataset_report(
     DatasetReport {
         name: name.to_string(),
         queries: cases.len(),
-        recall5: metrics.recall5 as f32 / total,
-        recall10: metrics.recall10 as f32 / total,
-        mrr: metrics.reciprocal_rank_sum / total,
-        ndcg10: metrics.ndcg10_sum / total,
+        recall5,
+        recall10,
+        mrr,
+        ndcg10,
+        by_language: language_breakdown(idx, cases, alpha),
         cases: case_reports,
     }
 }
@@ -269,30 +349,56 @@ fn dataset_report(
 fn print_summary_row(report: &DatasetReport) {
     println!(
         "| {} | {} | {:.3} | {:.3} | {:.3} | {:.3} |",
-        report.name, report.queries, report.recall5, report.recall10, report.mrr,
-        report.ndcg10
+        report.name, report.queries, report.recall5, report.recall10, report.mrr, report.ndcg10
     );
 }
 
 fn print_details(name: &str, cases: &[QueryCase], idx: &PluckIndex, alpha: Option<f32>) {
     println!();
     println!("### {name}");
-    println!("| Query | Rank | Top hit |");
-    println!("|-------|-----:|---------|");
+    println!("| Query | Language | Rank | Top hit |");
+    println!("|-------|----------|-----:|---------|");
     for case in cases {
         let hits = idx.search_hybrid(&case.query, 10, 0.0, alpha).unwrap();
         let rank = rank_of(&hits, &case.labels);
+        let language = language_for_case(case);
         let top = hits
             .first()
             .map(|hit| format!("{}::{}", hit.path, hit.symbol))
             .unwrap_or_else(|| "(none)".to_string());
-        println!("| `{}` | {} | `{}` |", case.query, fmt_rank(rank), top);
+        println!(
+            "| `{}` | {} | {} | `{}` |",
+            case.query,
+            language,
+            fmt_rank(rank),
+            top
+        );
+    }
+}
+
+fn print_language_breakdown(reports: &[DatasetReport]) {
+    println!();
+    println!("### Per-language breakdown");
+    println!("| Dataset | Language | Queries | Recall@5 | Recall@10 | MRR | NDCG@10 |");
+    println!("|---------|----------|--------:|---------:|----------:|----:|--------:|");
+    for report in reports {
+        for lang in &report.by_language {
+            println!(
+                "| {} | {} | {} | {:.3} | {:.3} | {:.3} | {:.3} |",
+                report.name,
+                lang.language,
+                lang.queries,
+                lang.recall5,
+                lang.recall10,
+                lang.mrr,
+                lang.ndcg10
+            );
+        }
     }
 }
 
 fn suite_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../benchmarks/quality/recall.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../benchmarks/quality/recall.json")
 }
 
 fn load_suite() -> Result<QualitySuite> {
@@ -316,8 +422,7 @@ fn dataset_root(dataset: &Dataset) -> PathBuf {
 }
 
 fn default_report_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../benchmarks/results/recall-quality.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../benchmarks/results/recall-quality.json")
 }
 
 fn write_report(report: &SuiteReport) -> Result<()> {
@@ -410,8 +515,9 @@ fn main() -> Result<()> {
                     reports.push(report);
                 }
                 DatasetKind::RepoBacked => {
-                    let Some((_, idx, available, root)) =
-                        repo_indices.iter().find(|(name, _, _, _)| name == &dataset.name)
+                    let Some((_, idx, available, root)) = repo_indices
+                        .iter()
+                        .find(|(name, _, _, _)| name == &dataset.name)
                     else {
                         continue;
                     };
@@ -429,6 +535,8 @@ fn main() -> Result<()> {
                 }
             }
         }
+
+        print_language_breakdown(&reports);
 
         if first_report.is_none() {
             first_report = Some(SuiteReport {
@@ -448,8 +556,9 @@ fn main() -> Result<()> {
                 print_details(&dataset.name, &dataset.cases, &synthetic_idx, detail_alpha);
             }
             DatasetKind::RepoBacked => {
-                let Some((_, idx, available, _)) =
-                    repo_indices.iter().find(|(name, _, _, _)| name == &dataset.name)
+                let Some((_, idx, available, _)) = repo_indices
+                    .iter()
+                    .find(|(name, _, _, _)| name == &dataset.name)
                 else {
                     continue;
                 };
