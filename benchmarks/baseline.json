@@ -15,6 +15,7 @@
       "tolerance_pct": 100,
       "regression_direction": "higher",
       "unit": "ms",
+      "max_value": 8.0,
       "source": "bench chunker \u2014 chunk_medium (500 lines) median",
       "note": "100% tolerance accommodates CI runner variance; absolute regression > 8 ms still fails."
     },
@@ -30,6 +31,7 @@
       "tolerance_pct": 200,
       "regression_direction": "higher",
       "unit": "ms",
+      "max_value": 1.0,
       "source": "bench indexer \u2014 medium (500 files) Search warm p50",
       "note": "Wide tolerance: <1 ms is the invariant; we only care that it's not >1 ms."
     },

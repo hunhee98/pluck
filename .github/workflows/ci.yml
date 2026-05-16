@@ -100,7 +100,7 @@ jobs:
           python3 scripts/regression-gate.py 2>&1 | tee benchmarks/results/regression-gate.log
 
       - name: Comment on regression failure
-        if: github.event_name == 'pull_request' && steps.regression_gate.outcome == 'failure'
+        if: failure() && github.event_name == 'pull_request' && steps.regression_gate.outcome == 'failure'
         uses: actions/github-script@v7
         continue-on-error: true
         with:
