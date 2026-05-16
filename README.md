@@ -1,3 +1,7 @@
+<p align="right">
+  <a href="README.ko.md">한국어로 보기</a>
+</p>
+
 <h2 align="center">
   <!-- GPT IMAGE PROMPT: A sleek, modern logo for 'pluck', an AI code search tool. The logo should feature a stylized bird or feather motif, or a fast-moving abstract shape, with a clean tech-focused aesthetic. Use vibrant green and dark blue tones. Transparent background. -->
   <img width="30%" alt="pluck logo" src="assets/images/pluck_logo.png"><br/>
@@ -195,11 +199,14 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
   <img src="assets/images/roadmap.png" alt="Roadmap">
 </p>
 
-- **v0.2.0**: First crates.io publish, MCP tools, session dedup, smart outline,
-  and expanded surface — `digest`, `impact`, `deps`, `plan`.
-- **v0.3.0**: Natural-language recall — 100-query suite across tokio / django / next.js, query expansion, two-stage cascade, continuous hybrid weighting, NDCG@10 measurement.
-- **v0.4.0**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
-- **v0.5.0**: Adoption-rate counter, tool-description A/B harness, LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
+- **v0.2.0 — shipped**: First crates.io publish, MCP tools, session dedup,
+  smart outline, and expanded surface — `digest`, `impact`, `deps`, `plan`.
+- **v0.3.0 — shipped**: Natural-language recall — 100-query suite across
+  tokio / django / next.js, query expansion, two-stage cascade, continuous
+  hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
+- **v0.4.0 — next**: Language coverage — Java, C / C++, Kotlin, Ruby, PHP, Swift.
+- **v0.5.0**: Adoption-rate counter, tool-description A/B harness,
+  LLM-in-loop bench, Aider / OpenHands / Cursor hooks.
 
 ## License
 

@@ -8,8 +8,10 @@
 # What it does:
 #   1. Fails fast if the working tree is dirty.
 #   2. Runs the full workspace test suite.
-#   3. cargo publish (--dry-run by default) for each publishable crate, in
-#      dependency order: pluck-core → pluck-mcp → pluck-cli.
+#   3. Dry-run mode verifies pluck-core with `cargo publish --dry-run`
+#      and package-lists dependent crates. Live mode publishes each
+#      publishable crate in dependency order:
+#      pluck-core → pluck-mcp → pluck-cli.
 #   4. pluck-bench is `publish = false` and stays local.
 #
 # crates.io requires path deps to also carry a `version =` entry, which
@@ -41,7 +43,18 @@ ORDER=(pluck-core pluck-mcp pluck-cli)
 for crate in "${ORDER[@]}"; do
   echo "==> publish: $crate ($([ "$DRY_RUN" = true ] && echo DRY-RUN || echo LIVE))"
   if [ "$DRY_RUN" = true ]; then
-    ( cd "crates/$crate" && cargo publish --dry-run )
+    if [ "$crate" = "pluck-core" ]; then
+      ( cd "crates/$crate" && cargo publish --dry-run )
+    else
+      # `cargo publish --dry-run` checks registry resolution. Before the
+      # parent version is actually published, dependent crates such as
+      # pluck-mcp cannot resolve `pluck-core = <new version>` from crates.io.
+      # Workspace tests above cover the local path dependency; this package
+      # listing verifies the publish file set without pretending the parent
+      # is already indexed.
+      ( cd "crates/$crate" && cargo package --list >/dev/null )
+      echo "    package file list OK; registry verification runs during --publish after parent indexing."
+    fi
   else
     ( cd "crates/$crate" && cargo publish )
     # crates.io indexing can lag a few seconds between dependents.
@@ -55,6 +68,7 @@ done
 echo
 if [ "$DRY_RUN" = true ]; then
   echo "Dry run OK. Re-run with --publish to push to crates.io."
+  echo "Dependent publish verification is intentionally deferred until the parent crate version exists on crates.io."
 else
   echo "Published. Next: tag the commit, push tags, update the brew tap."
   echo "  git tag v\$(cargo metadata --no-deps --format-version 1 \
