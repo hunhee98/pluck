@@ -198,7 +198,7 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 - **v0.2.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인,
   확장된 검색 표면 — `digest`, `impact`, `deps`, `plan`.
 - **v0.3.0**: 자연어 리콜 품질 — 쿼리 확장, 2단계 cascade, NDCG@10 측정.
-- **v0.4.0**: 언어 커버리지 — Java, C / C++, Kotlin, Ruby, PHP, Swift.
+- **v0.4.0**: 언어 커버리지 — Java 완료, 다음은 C / C++, Kotlin, Ruby, PHP, Swift.
 - **v0.5.0**: 채택률 카운터, 툴 설명 A/B 하네스, LLM-in-loop 벤치, Aider / OpenHands / Cursor hook.
 
 ## 라이선스

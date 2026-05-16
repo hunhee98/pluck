@@ -9,6 +9,7 @@ pub enum Lang {
     Rust,
     Python,
     Go,
+    Java,
 }
 
 impl Lang {
@@ -19,6 +20,7 @@ impl Lang {
             "rs" => Some(Self::Rust),
             "py" | "pyi" => Some(Self::Python),
             "go" => Some(Self::Go),
+            "java" => Some(Self::Java),
             _ => None,
         }
     }
@@ -30,6 +32,7 @@ impl Lang {
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
             Self::Python => tree_sitter_python::LANGUAGE.into(),
             Self::Go => tree_sitter_go::LANGUAGE.into(),
+            Self::Java => tree_sitter_java::LANGUAGE.into(),
         }
     }
 
@@ -40,6 +43,7 @@ impl Lang {
             Self::Rust => include_str!("queries/rust.scm"),
             Self::Python => include_str!("queries/python.scm"),
             Self::Go => include_str!("queries/go.scm"),
+            Self::Java => include_str!("queries/java.scm"),
         }
     }
 
@@ -52,6 +56,7 @@ impl Lang {
             Self::Rust => include_str!("queries/callees/rust.scm"),
             Self::Python => include_str!("queries/callees/python.scm"),
             Self::Go => include_str!("queries/callees/go.scm"),
+            Self::Java => include_str!("queries/callees/java.scm"),
         }
     }
 
@@ -66,6 +71,7 @@ impl Lang {
             Self::Rust => include_str!("queries/imports/rust.scm"),
             Self::Python => include_str!("queries/imports/python.scm"),
             Self::Go => include_str!("queries/imports/go.scm"),
+            Self::Java => include_str!("queries/imports/java.scm"),
         }
     }
 
@@ -105,6 +111,10 @@ impl Lang {
             Self::Go => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Go)).as_ref()
+            }
+            Self::Java => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Java)).as_ref()
             }
         }
     }

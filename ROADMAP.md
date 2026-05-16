@@ -132,7 +132,7 @@ recall argument.
 Five-language baseline (Rust / Py / TS / Go / JS) covers ~80 % of
 agentic coding traffic. The next tier closes credibility gaps.
 
-- [ ] Java chunker (largest gap — enterprise users).
+- [x] Java chunker (largest gap — enterprise users).
 - [ ] C / C++ chunker.
 - [ ] Kotlin chunker (Android).
 - [ ] Ruby, PHP, Swift chunkers (round-out the tier).

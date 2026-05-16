@@ -294,7 +294,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("///")
             .or_else(|| line.strip_prefix("//!"))
             .map(|s| s.trim().to_string()),
-        Language::TypeScript | Language::JavaScript | Language::Go => {
+        Language::TypeScript | Language::JavaScript | Language::Go | Language::Java => {
             line.strip_prefix("//").map(|s| s.trim().to_string())
         }
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
@@ -773,6 +773,98 @@ const square = (x) => x * x;
         assert!(names.contains(&"square"));
     }
 
+    // ── Java ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_java_class_constructor_method_enum_interface_record() {
+        let src = r#"
+package com.example.auth;
+
+import java.util.List;
+
+/**
+ * Token lifecycle operations.
+ */
+public final class AuthService {
+    private final TokenStore store;
+
+    public AuthService(TokenStore store) {
+        this.store = store;
+    }
+
+    public boolean verify(String token) {
+        return store.lookup(token).isPresent();
+    }
+}
+
+interface TokenStore {
+    java.util.Optional<String> lookup(String token);
+}
+
+record LoginRequest(String token) {}
+
+enum AuthStatus {
+    VALID,
+    EXPIRED
+}
+"#;
+        let chunks = chunk_source(src, Language::Java).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&"AuthService"), "missing class: {chunks:?}");
+        assert!(names.contains(&"AuthService"), "missing constructor");
+        assert!(names.contains(&"verify"), "missing method");
+        assert!(names.contains(&"TokenStore"), "missing interface");
+        assert!(names.contains(&"LoginRequest"), "missing record");
+        assert!(names.contains(&"AuthStatus"), "missing enum");
+
+        let class = chunks
+            .iter()
+            .find(|c| c.symbol == "AuthService" && c.kind == ChunkKind::Class)
+            .expect("AuthService class missing");
+        assert_eq!(class.kind, ChunkKind::Class);
+        assert!(class.doc_comment.contains("Token lifecycle operations"));
+
+        let method = chunks.iter().find(|c| c.symbol == "verify").unwrap();
+        assert_eq!(method.kind, ChunkKind::Method);
+        assert!(method.signature.contains("public boolean verify"));
+        assert!(method.callees.contains(&"lookup".to_string()));
+
+        let status = chunks.iter().find(|c| c.symbol == "AuthStatus").unwrap();
+        assert_eq!(status.kind, ChunkKind::Enum);
+    }
+
+    #[test]
+    fn test_java_annotation_type_and_constructor_callees() {
+        let src = r#"
+public @interface Route {
+    String value();
+}
+
+class Handler {
+    Handler() {
+        new java.util.ArrayList<String>();
+    }
+}
+"#;
+        let chunks = chunk_source(src, Language::Java).unwrap();
+        let route = chunks.iter().find(|c| c.symbol == "Route").unwrap();
+        assert_eq!(route.kind, ChunkKind::Class);
+
+        let handler_ctor = chunks
+            .iter()
+            .find(|c| c.symbol == "Handler" && c.kind == ChunkKind::Method)
+            .unwrap();
+        assert!(
+            handler_ctor
+                .callees
+                .contains(&"java.util.ArrayList".to_string())
+                || handler_ctor.callees.contains(&"ArrayList".to_string()),
+            "constructor callee missing: {:?}",
+            handler_ctor.callees
+        );
+    }
+
     #[test]
     fn imports_rust() {
         let src = r#"
@@ -856,5 +948,22 @@ func main() {}
         assert!(r.imports.contains(&"fmt".to_string()));
         assert!(r.imports.contains(&"os".to_string()));
         assert!(r.imports.contains(&"github.com/foo/bar".to_string()));
+    }
+
+    #[test]
+    fn imports_java() {
+        let src = r#"
+package com.example;
+
+import java.util.List;
+import static java.util.Collections.emptyList;
+
+class Example {}
+"#;
+        let r = chunk_source_with_meta(src, Language::Java).unwrap();
+        assert!(r.imports.contains(&"java.util.List".to_string()));
+        assert!(r
+            .imports
+            .contains(&"java.util.Collections.emptyList".to_string()));
     }
 }

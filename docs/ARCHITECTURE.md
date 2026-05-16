@@ -99,6 +99,7 @@ The agent already has the content in its context, so this is pure token win.
 | TypeScript / JavaScript | `tree-sitter-typescript` | `vercel/next.js` (subset) |
 | Python | `tree-sitter-python` | `pallets/flask` |
 | Go | `tree-sitter-go` | `gin-gonic/gin` |
+| Java | `tree-sitter-java` | real-world fixtures pending |
 
 More languages added behind the same chunker interface.
 
