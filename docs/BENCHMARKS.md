@@ -83,9 +83,10 @@ Full numbers under `benchmarks/results/` after every nightly run.
 
 `crates/pluck-core/benches/recall.rs` reads
 `benchmarks/quality/recall.json` and reports Recall@5, Recall@10, MRR,
-NDCG@10, per-query ranks, and per-language breakdowns. Repo-backed datasets
-are skipped when their checkout is unavailable, so CI can compile the bench
-without requiring large external repos.
+NDCG@10, per-query ranks, and per-language breakdowns. The repo-backed portion
+contains 100 natural-language queries across tokio, django, and next.js. Those
+datasets are skipped when their checkout is unavailable, so CI can compile the
+bench without requiring large external repos.
 
 The suite includes a synthetic multilingual set for Hangul, Chinese, and
 Japanese retrieval. Those cases exercise unspaced CJK comments so tokenizer

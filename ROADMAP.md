@@ -115,7 +115,7 @@ recall argument.
 - [x] Query expansion via embedding-nearest BM25 vocab terms.
 - [x] Labeled retrieval suite format with Recall@K / MRR / NDCG@10
       reporting.
-- [ ] Expand labeled NL recall@K test set to 100 queries across tokio,
+- [x] Expand labeled NL recall@K test set to 100 queries across tokio,
       django, next.js).
 - [x] Per-language NL recall breakdown.
 - [x] Hangul / CJK retrieval-accuracy bench.

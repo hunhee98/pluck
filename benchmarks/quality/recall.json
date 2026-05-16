@@ -106,7 +106,7 @@
       "name": "tokio-rust",
       "kind": "repo-backed",
       "root_env": "PLUCK_RECALL_TOKIO_ROOT",
-      "root_default": "/tmp/tokio",
+      "root_default": "/tmp/tokio/tokio",
       "cases": [
         {
           "query": "spawn a task on the runtime",
@@ -154,6 +154,583 @@
           "labels": [
             { "path": "src/runtime/runtime.rs", "symbol": "spawn_blocking", "relevance": 3 },
             { "path": "src/task/blocking.rs", "symbol": "spawn_blocking", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "block the current thread until a future completes",
+          "labels": [
+            { "path": "src/runtime/runtime.rs", "symbol": "block_on", "relevance": 3 },
+            { "path": "src/runtime/handle.rs", "symbol": "block_on", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "enter the runtime context from synchronous code",
+          "labels": [
+            { "path": "src/runtime/runtime.rs", "symbol": "enter", "relevance": 3 },
+            { "path": "src/runtime/handle.rs", "symbol": "enter", "relevance": 2 }
+          ]
+        },
+        {
+          "query": "borrow a handle from the runtime",
+          "labels": [
+            { "path": "src/runtime/runtime.rs", "symbol": "handle", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "fail a future if it takes too long",
+          "labels": [
+            { "path": "src/time/timeout.rs", "symbol": "timeout", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "set a timeout at a specific deadline",
+          "labels": [
+            { "path": "src/time/timeout.rs", "symbol": "timeout_at", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "sleep until a concrete instant",
+          "labels": [
+            { "path": "src/time/sleep.rs", "symbol": "sleep_until", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create a timer that ticks repeatedly",
+          "labels": [
+            { "path": "src/time/interval.rs", "symbol": "interval", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "wait for the next interval tick",
+          "labels": [
+            { "path": "src/time/interval.rs", "symbol": "tick", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "yield execution back to the scheduler",
+          "labels": [
+            { "path": "src/task/yield_now.rs", "symbol": "yield_now", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "join the next completed task in a set",
+          "labels": [
+            { "path": "src/task/join_set.rs", "symbol": "join_next", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "wait for all tasks in a join set",
+          "labels": [
+            { "path": "src/task/join_set.rs", "symbol": "join_all", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "abort and wait for tasks during join set shutdown",
+          "labels": [
+            { "path": "src/task/join_set.rs", "symbol": "shutdown", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "open a file asynchronously",
+          "labels": [
+            { "path": "src/fs/file.rs", "symbol": "open", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create a new async file handle",
+          "labels": [
+            { "path": "src/fs/file.rs", "symbol": "create", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read an entire file into bytes",
+          "labels": [
+            { "path": "src/fs/read.rs", "symbol": "read", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read an entire file as text",
+          "labels": [
+            { "path": "src/fs/read_to_string.rs", "symbol": "read_to_string", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "write bytes to a file asynchronously",
+          "labels": [
+            { "path": "src/fs/write.rs", "symbol": "write", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "copy one filesystem path to another",
+          "labels": [
+            { "path": "src/fs/copy.rs", "symbol": "copy", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create all parent directories for a path",
+          "labels": [
+            { "path": "src/fs/create_dir_all.rs", "symbol": "create_dir_all", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "remove a directory tree recursively",
+          "labels": [
+            { "path": "src/fs/remove_dir_all.rs", "symbol": "remove_dir_all", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "rename a file or directory",
+          "labels": [
+            { "path": "src/fs/rename.rs", "symbol": "rename", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "bind a TCP listener socket",
+          "labels": [
+            { "path": "src/net/tcp/listener.rs", "symbol": "bind", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "accept an incoming TCP connection",
+          "labels": [
+            { "path": "src/net/tcp/listener.rs", "symbol": "accept", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "connect a TCP stream to a remote address",
+          "labels": [
+            { "path": "src/net/tcp/stream.rs", "symbol": "connect", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "bind a UDP socket to an address",
+          "labels": [
+            { "path": "src/net/udp.rs", "symbol": "bind", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "send a UDP datagram to a peer",
+          "labels": [
+            { "path": "src/net/udp.rs", "symbol": "send_to", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "wake one task waiting on a notification",
+          "labels": [
+            { "path": "src/sync/notify.rs", "symbol": "notify_one", "relevance": 3 },
+            { "path": "src/sync/notify.rs", "symbol": "notified", "relevance": 2 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "django-python",
+      "kind": "repo-backed",
+      "root_env": "PLUCK_RECALL_DJANGO_ROOT",
+      "root_default": "/tmp/django/django",
+      "cases": [
+        {
+          "query": "render a template with context into an HTTP response",
+          "labels": [
+            { "path": "shortcuts.py", "symbol": "render", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "redirect a request to another URL or view",
+          "labels": [
+            { "path": "shortcuts.py", "symbol": "redirect", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "fetch one model object or raise a 404",
+          "labels": [
+            { "path": "shortcuts.py", "symbol": "get_object_or_404", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "fetch a queryset list or raise a 404",
+          "labels": [
+            { "path": "shortcuts.py", "symbol": "get_list_or_404", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "reverse a URL pattern name into a path",
+          "labels": [
+            { "path": "urls/base.py", "symbol": "reverse", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "include another URL configuration",
+          "labels": [
+            { "path": "urls/conf.py", "symbol": "include", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "build a plain HTTP response object",
+          "labels": [
+            { "path": "http/response.py", "symbol": "HttpResponse", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "return JSON data as an HTTP response",
+          "labels": [
+            { "path": "http/response.py", "symbol": "JsonResponse", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "stream response content incrementally",
+          "labels": [
+            { "path": "http/response.py", "symbol": "StreamingHttpResponse", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "send a file as an HTTP response",
+          "labels": [
+            { "path": "http/response.py", "symbol": "FileResponse", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "represent an incoming HTTP request",
+          "labels": [
+            { "path": "http/request.py", "symbol": "HttpRequest", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "parse and mutate query string parameters",
+          "labels": [
+            { "path": "http/request.py", "symbol": "QueryDict", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "paginate a list of objects",
+          "labels": [
+            { "path": "core/paginator.py", "symbol": "Paginator", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "raise an error for invalid form or model data",
+          "labels": [
+            { "path": "core/exceptions.py", "symbol": "ValidationError", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "raise when a user lacks permission",
+          "labels": [
+            { "path": "core/exceptions.py", "symbol": "PermissionDenied", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "base class for database models",
+          "labels": [
+            { "path": "db/models/base.py", "symbol": "Model", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "chain database query operations lazily",
+          "labels": [
+            { "path": "db/models/query.py", "symbol": "QuerySet", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "manager object for model queries",
+          "labels": [
+            { "path": "db/models/manager.py", "symbol": "Manager", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "define a many to one model relation",
+          "labels": [
+            { "path": "db/models/fields/related.py", "symbol": "ForeignKey", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "define a many to many model relation",
+          "labels": [
+            { "path": "db/models/fields/related.py", "symbol": "ManyToManyField", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "store short text on a database model",
+          "labels": [
+            { "path": "db/models/fields/__init__.py", "symbol": "CharField", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "store date and time values on a model",
+          "labels": [
+            { "path": "db/models/fields/__init__.py", "symbol": "DateTimeField", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "base class for HTML forms",
+          "labels": [
+            { "path": "forms/forms.py", "symbol": "Form", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create a form backed by a model",
+          "labels": [
+            { "path": "forms/models.py", "symbol": "ModelForm", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "validate an email address form field",
+          "labels": [
+            { "path": "forms/fields.py", "symbol": "EmailField", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "validate an uploaded file field",
+          "labels": [
+            { "path": "forms/fields.py", "symbol": "FileField", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "base class for custom management commands",
+          "labels": [
+            { "path": "core/management/base.py", "symbol": "BaseCommand", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "call a management command from Python",
+          "labels": [
+            { "path": "core/management/__init__.py", "symbol": "call_command", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "base class for class based views",
+          "labels": [
+            { "path": "views/generic/base.py", "symbol": "View", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "render a template from a class based view",
+          "labels": [
+            { "path": "views/generic/base.py", "symbol": "TemplateView", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "display a list of objects in a generic view",
+          "labels": [
+            { "path": "views/generic/list.py", "symbol": "ListView", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "display details for a single object view",
+          "labels": [
+            { "path": "views/generic/detail.py", "symbol": "DetailView", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "require a user to be logged in before calling a view",
+          "labels": [
+            { "path": "contrib/auth/decorators.py", "symbol": "login_required", "relevance": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nextjs-typescript",
+      "kind": "repo-backed",
+      "root_env": "PLUCK_RECALL_NEXT_ROOT",
+      "root_default": "/tmp/next.js/packages/next",
+      "cases": [
+        {
+          "query": "redirect from an app router server component",
+          "labels": [
+            { "path": "src/client/components/redirect.ts", "symbol": "redirect", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "issue a permanent redirect in the app router",
+          "labels": [
+            { "path": "src/client/components/redirect.ts", "symbol": "permanentRedirect", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "throw a not found route error",
+          "labels": [
+            { "path": "src/client/components/not-found.ts", "symbol": "notFound", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "throw a forbidden route error",
+          "labels": [
+            { "path": "src/client/components/forbidden.ts", "symbol": "forbidden", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "throw an unauthorized route error",
+          "labels": [
+            { "path": "src/client/components/unauthorized.ts", "symbol": "unauthorized", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read request cookies in a server component",
+          "labels": [
+            { "path": "src/server/request/cookies.ts", "symbol": "cookies", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read request headers in a server component",
+          "labels": [
+            { "path": "src/server/request/headers.ts", "symbol": "headers", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "enable draft mode for a request",
+          "labels": [
+            { "path": "src/server/request/draft-mode.ts", "symbol": "draftMode", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "revalidate cached data by tag",
+          "labels": [
+            { "path": "src/server/web/spec-extension/revalidate.ts", "symbol": "revalidateTag", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "revalidate a cached path",
+          "labels": [
+            { "path": "src/server/web/spec-extension/revalidate.ts", "symbol": "revalidatePath", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "cache the result of an async server function",
+          "labels": [
+            { "path": "src/server/web/spec-extension/unstable-cache.ts", "symbol": "unstable_cache", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "get the app router instance in a client component",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "useRouter", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read the current pathname in a client component",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "usePathname", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read URL search params in a client component",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "useSearchParams", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read dynamic route params in a client component",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "useParams", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read one selected layout segment",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "useSelectedLayoutSegment", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "read all selected layout segments",
+          "labels": [
+            { "path": "src/client/components/navigation.ts", "symbol": "useSelectedLayoutSegments", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "get the pages router from React context",
+          "labels": [
+            { "path": "src/client/router.ts", "symbol": "useRouter", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create the singleton client router",
+          "labels": [
+            { "path": "src/client/router.ts", "symbol": "createRouter", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "make a public router instance for user code",
+          "labels": [
+            { "path": "src/client/router.ts", "symbol": "makePublicRouterInstance", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "prefix a URL with the configured base path",
+          "labels": [
+            { "path": "src/client/add-base-path.ts", "symbol": "addBasePath", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "remove the configured base path from a URL",
+          "labels": [
+            { "path": "src/client/remove-base-path.ts", "symbol": "removeBasePath", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "resolve an href for client side navigation",
+          "labels": [
+            { "path": "src/client/resolve-href.ts", "symbol": "resolveHref", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "parse a router URL string",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/parse-url.ts", "symbol": "parseUrl", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "format a router URL object",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/format-url.ts", "symbol": "formatUrl", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "detect whether a route contains dynamic parameters",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/is-dynamic.ts", "symbol": "isDynamicRoute", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "compile a route into a matching regular expression",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/route-regex.ts", "symbol": "getRouteRegex", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "create a matcher from a route regex",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/route-matcher.ts", "symbol": "getRouteMatcher", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "sort routes so specific paths win before dynamic paths",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/sorted-routes.ts", "symbol": "getSortedRoutes", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "interpolate params into a dynamic route path",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/interpolate-as.ts", "symbol": "interpolateAs", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "match middleware routes against a request pathname",
+          "labels": [
+            { "path": "src/shared/lib/router/utils/middleware-route-matcher.ts", "symbol": "getMiddlewareRouteMatcher", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "represent an incoming Next.js web request",
+          "labels": [
+            { "path": "src/server/web/spec-extension/request.ts", "symbol": "NextRequest", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "build a Next.js web response with cookies or redirects",
+          "labels": [
+            { "path": "src/server/web/spec-extension/response.ts", "symbol": "NextResponse", "relevance": 3 }
           ]
         }
       ]
