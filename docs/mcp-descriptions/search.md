@@ -10,10 +10,11 @@ the exact string. Use `compact: true` for discovery-only results.
 
 Search returns ranked function/class chunks with paths and line ranges,
 so the agent can inspect the right code directly instead of guessing
-identifiers and opening whole files. BM25F widens the candidate pool,
-embeddings rerank that pool, and a small semantic-rescue pass catches
-concept queries with weak lexical overlap. Session dedup collapses
-repeated chunks to placeholders.
+identifiers and opening whole files. Natural-language queries expand
+with embedding-nearest BM25 terms from the indexed repo, BM25F widens
+the candidate pool, embeddings rerank that pool, and a small
+semantic-rescue pass catches concept queries with weak lexical overlap.
+Session dedup collapses repeated chunks to placeholders.
 
 ## FALLBACK
 

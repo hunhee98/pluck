@@ -112,7 +112,7 @@ comparable multi-repo benchmark. Until this ships, semble wins the
 recall argument.
 
 - [x] Two-stage cascade — widen BM25 candidate pool, embed-rerank.
-- [ ] Query expansion via embedding-nearest BM25 vocab terms.
+- [x] Query expansion via embedding-nearest BM25 vocab terms.
 - [x] Labeled retrieval suite format with Recall@K / MRR / NDCG@10
       reporting.
 - [ ] Expand labeled NL recall@K test set to 100 queries across tokio,

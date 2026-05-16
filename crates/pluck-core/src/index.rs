@@ -41,6 +41,16 @@ const BM25F_BOOST_DOC_COMMENT: f32 = 4.0;
 const BM25F_BOOST_CONTENT: f32 = 1.0;
 
 const WRITER_HEAP_BYTES: usize = 50_000_000;
+const QUERY_EXPANSION_TERMS: usize = 4;
+const QUERY_EXPANSION_MIN_SIM: f32 = 0.25;
+
+type ExpansionVocab = HashMap<String, ExpansionVocabTerm>;
+
+#[derive(Clone)]
+struct ExpansionVocabTerm {
+    embedding: Vec<f32>,
+    chunk_count: u32,
+}
 
 pub struct PluckIndex {
     inner: TantivyIndex,
@@ -55,6 +65,11 @@ pub struct PluckIndex {
     /// chunk_id → embedding vector. Populated only when `encoder` is set.
     /// RwLock so reads (search) don't block other reads.
     embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
+    /// Indexed BM25 terms with their static embeddings, used to expand
+    /// natural-language BM25 queries with nearest in-repo code terms.
+    /// Populated only when `encoder` is set; stale terms after deletes
+    /// are harmless because tantivy still decides the actual hits.
+    expansion_vocab: Arc<RwLock<ExpansionVocab>>,
     /// Reverse caller index: callee leaf name (lowercased) → Vec of
     /// chunk_ids whose content calls that callee. Built incrementally
     /// in `add_chunk`; used by `impact()` for upstream blast-radius
@@ -138,6 +153,7 @@ impl PluckIndex {
             fields,
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
+            expansion_vocab: Arc::new(RwLock::new(HashMap::new())),
             callers: Arc::new(RwLock::new(HashMap::new())),
             imports: Arc::new(RwLock::new(HashMap::new())),
         })
@@ -156,6 +172,7 @@ impl PluckIndex {
             fields,
             encoder: None,
             embeddings: Arc::new(RwLock::new(HashMap::new())),
+            expansion_vocab: Arc::new(RwLock::new(HashMap::new())),
             callers: Arc::new(RwLock::new(HashMap::new())),
             imports: Arc::new(RwLock::new(HashMap::new())),
         })
@@ -183,6 +200,7 @@ impl PluckIndex {
             next_chunk_id: 0,
             encoder: self.encoder.clone(),
             embeddings: Arc::clone(&self.embeddings),
+            expansion_vocab: Arc::clone(&self.expansion_vocab),
             callers: Arc::clone(&self.callers),
             imports: Arc::clone(&self.imports),
         })
@@ -271,10 +289,21 @@ impl PluckIndex {
         cutoff_frac: f32,
         include_doc_comment: bool,
     ) -> Result<Vec<SearchHit>> {
+        self.search_bm25_inner(query_str, query_str, k, cutoff_frac, include_doc_comment)
+    }
+
+    fn search_bm25_inner(
+        &self,
+        original_query: &str,
+        bm25_query_str: &str,
+        k: usize,
+        cutoff_frac: f32,
+        include_doc_comment: bool,
+    ) -> Result<Vec<SearchHit>> {
         let reader = self.inner.reader().context("open reader")?;
         let searcher = reader.searcher();
         let qp = self.bm25f_query_parser(include_doc_comment);
-        let bm25_query = normalized_bm25_query(query_str);
+        let bm25_query = normalized_bm25_query(bm25_query_str);
         let query = qp.parse_query(&bm25_query).context("parse query")?;
         let top = searcher
             .search(&query, &TopDocs::with_limit(k).order_by_score())
@@ -292,7 +321,7 @@ impl PluckIndex {
         }
         // Post-fusion ranking pipeline: symbol-match / sibling-chunk /
         // test-file boosts. Re-sorts in place.
-        apply_boosts(&mut hits, query_str);
+        apply_boosts(&mut hits, original_query);
         Ok(hits)
     }
 
@@ -331,11 +360,13 @@ impl PluckIndex {
             .unwrap_or_else(|| inferred_rrf_alpha(query_str))
             .clamp(0.0, 1.0);
         let bm25_alpha = 1.0 - semantic_alpha;
+        let q_emb = encoder.encode(query_str)?;
+        let bm25_query = self.expanded_bm25_query(query_str, &q_emb);
 
         // Stage 1: widen the lexical pool aggressively. BM25F is cheap
         // and keeps identifier/path-ish precision high, so it is the
         // right recall gate before semantic reranking.
-        let bm25 = self.search_with_cutoff_inner(query_str, bm25_candidate_k, 0.0, true)?;
+        let bm25 = self.search_bm25_inner(query_str, &bm25_query, bm25_candidate_k, 0.0, true)?;
         let use_semantic_rescue = should_run_semantic_rescue(query_str, bm25.len(), k);
         let (cascade_alpha, semantic_rescue_alpha) =
             semantic_weight_split(semantic_alpha, !bm25.is_empty(), use_semantic_rescue);
@@ -344,7 +375,6 @@ impl PluckIndex {
         // similarity. This is the cascade signal: semantic ranking over
         // a bounded lexical candidate set instead of immediately trusting
         // global nearest neighbors.
-        let q_emb = encoder.encode(query_str)?;
         let embeddings = self
             .embeddings
             .read()
@@ -432,6 +462,29 @@ impl PluckIndex {
         }
         apply_boosts(&mut out, query_str);
         Ok(out)
+    }
+
+    fn expanded_bm25_query(&self, query: &str, query_embedding: &[f32]) -> String {
+        if !should_expand_bm25_query(query) {
+            return query.to_string();
+        }
+
+        let mut terms = bm25_query_terms(query);
+        if terms.is_empty() {
+            return query.to_string();
+        }
+
+        let expansion_terms = self
+            .expansion_vocab
+            .read()
+            .map(|vocab| nearest_expansion_terms(&vocab, &terms, query_embedding))
+            .unwrap_or_default();
+        if expansion_terms.is_empty() {
+            return query.to_string();
+        }
+
+        terms.extend(expansion_terms);
+        terms.join(" ")
     }
 
     fn doc_to_hit(&self, score: f32, doc: &TantivyDocument) -> Result<SearchHit> {
@@ -948,6 +1001,10 @@ fn should_run_semantic_rescue(query: &str, bm25_candidates: usize, requested_hit
     bm25_candidates < requested_hits || is_natural_language_query(query)
 }
 
+fn should_expand_bm25_query(query: &str) -> bool {
+    is_natural_language_query(query)
+}
+
 fn semantic_weight_split(
     semantic_alpha: f32,
     has_bm25_candidates: bool,
@@ -979,6 +1036,42 @@ fn rerank_bm25_candidates_by_embedding(
     reranked
 }
 
+fn nearest_expansion_terms(
+    vocab: &ExpansionVocab,
+    query_terms: &[String],
+    query_embedding: &[f32],
+) -> Vec<String> {
+    let query_terms: HashSet<&str> = query_terms.iter().map(String::as_str).collect();
+    let mut scored: Vec<(&str, f32, u32)> = vocab
+        .iter()
+        .filter(|(term, _)| {
+            let term: &str = term.as_ref();
+            !query_terms.contains(term)
+        })
+        .map(|(term, entry)| {
+            (
+                term.as_str(),
+                cosine_similarity(query_embedding, &entry.embedding),
+                entry.chunk_count,
+            )
+        })
+        .filter(|(_, sim, _)| *sim >= QUERY_EXPANSION_MIN_SIM)
+        .collect();
+
+    scored.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.2.cmp(&a.2))
+            .then_with(|| a.0.cmp(b.0))
+    });
+
+    scored
+        .into_iter()
+        .take(QUERY_EXPANSION_TERMS)
+        .map(|(term, _, _)| term.to_string())
+        .collect()
+}
+
 fn normalized_bm25_query(query: &str) -> String {
     if !is_natural_language_query(query) {
         return query.to_string();
@@ -992,12 +1085,81 @@ fn normalized_bm25_query(query: &str) -> String {
     }
 }
 
+fn record_expansion_vocab_terms(
+    vocab: &Arc<RwLock<ExpansionVocab>>,
+    encoder: &StaticEncoder,
+    chunk: &Chunk,
+) {
+    for term in expansion_vocab_terms(chunk) {
+        let already_seen = vocab
+            .write()
+            .map(|mut map| {
+                if let Some(existing) = map.get_mut(&term) {
+                    existing.chunk_count = existing.chunk_count.saturating_add(1);
+                    true
+                } else {
+                    false
+                }
+            })
+            .unwrap_or(true);
+        if already_seen {
+            continue;
+        }
+
+        let Ok(embedding) = encoder.encode(&term) else {
+            continue;
+        };
+        if is_zero_vector(&embedding) {
+            continue;
+        }
+
+        if let Ok(mut map) = vocab.write() {
+            map.entry(term)
+                .and_modify(|entry| entry.chunk_count = entry.chunk_count.saturating_add(1))
+                .or_insert(ExpansionVocabTerm {
+                    embedding,
+                    chunk_count: 1,
+                });
+        }
+    }
+}
+
+fn expansion_vocab_terms(chunk: &Chunk) -> Vec<String> {
+    let mut terms = Vec::new();
+    for text in [
+        chunk.symbol.as_str(),
+        chunk.signature.as_str(),
+        chunk.doc_comment.as_str(),
+        chunk.content.as_str(),
+    ] {
+        for term in bm25_query_terms(text) {
+            if is_expansion_vocab_term(&term) && !terms.iter().any(|seen| seen == &term) {
+                terms.push(term);
+            }
+        }
+    }
+    terms
+}
+
+fn is_expansion_vocab_term(term: &str) -> bool {
+    let chars = term.chars().count();
+    let has_non_ascii = term.chars().any(|c| !c.is_ascii());
+    (chars >= 3 || (has_non_ascii && chars >= 2))
+        && !term.chars().all(|c| c.is_ascii_digit())
+        && !term.starts_with('_')
+}
+
+fn is_zero_vector(v: &[f32]) -> bool {
+    v.iter().all(|x| x.abs() <= f32::EPSILON)
+}
+
 pub struct IndexBatch {
     writer: IndexWriter,
     fields: Fields,
     next_chunk_id: u64,
     encoder: Option<Arc<StaticEncoder>>,
     embeddings: Arc<RwLock<HashMap<u64, Vec<f32>>>>,
+    expansion_vocab: Arc<RwLock<ExpansionVocab>>,
     /// Shared with `PluckIndex::callers` — written here, read by `impact`.
     callers: Arc<RwLock<HashMap<String, Vec<u64>>>>,
     /// Shared with `PluckIndex::imports` — written by `add_imports`, read
@@ -1053,6 +1215,7 @@ impl IndexBatch {
                     tracing::warn!(chunk_id = id, "embedding failed: {e}");
                 }
             }
+            record_expansion_vocab_terms(&self.expansion_vocab, enc, c);
         }
         Ok(id)
     }
@@ -1302,6 +1465,78 @@ function unrelatedHelper(): void {}
 
         assert_eq!(reranked[0].0.symbol, "semantic_first");
         assert_eq!(reranked[1].0.symbol, "lexical_first");
+    }
+
+    #[test]
+    fn nearest_expansion_terms_uses_index_vocab_embeddings() {
+        let vocab = HashMap::from([
+            (
+                "credential".to_string(),
+                ExpansionVocabTerm {
+                    embedding: vec![1.0, 0.0],
+                    chunk_count: 1,
+                },
+            ),
+            (
+                "palette".to_string(),
+                ExpansionVocabTerm {
+                    embedding: vec![0.0, 1.0],
+                    chunk_count: 10,
+                },
+            ),
+            (
+                "token".to_string(),
+                ExpansionVocabTerm {
+                    embedding: vec![1.0, 0.0],
+                    chunk_count: 1,
+                },
+            ),
+        ]);
+        let terms = nearest_expansion_terms(&vocab, &["token".to_string()], &[1.0, 0.0]);
+        assert_eq!(terms, vec!["credential"]);
+    }
+
+    #[test]
+    fn expanded_bm25_query_only_changes_natural_language_queries() {
+        let idx = PluckIndex::in_ram().unwrap();
+        idx.expansion_vocab.write().unwrap().insert(
+            "credential".to_string(),
+            ExpansionVocabTerm {
+                embedding: vec![1.0, 0.0],
+                chunk_count: 1,
+            },
+        );
+
+        assert_eq!(
+            idx.expanded_bm25_query("validate user token", &[1.0, 0.0]),
+            "validate user token credential"
+        );
+        assert_eq!(
+            idx.expanded_bm25_query("validateToken", &[1.0, 0.0]),
+            "validateToken"
+        );
+    }
+
+    #[test]
+    fn expansion_vocab_terms_filter_noise() {
+        let chunk = Chunk {
+            symbol: "validate_bearer".to_string(),
+            kind: ChunkKind::Function,
+            start_line: 1,
+            end_line: 3,
+            start_byte: 0,
+            end_byte: 0,
+            doc_comment: "Validate a bearer credential for a user session.".to_string(),
+            signature: "pub fn validate_bearer(secret: &str) -> bool".to_string(),
+            content: "if secret.starts_with(\"tk_\") { return true; }".to_string(),
+            callees: Vec::new(),
+        };
+        let terms = expansion_vocab_terms(&chunk);
+        assert!(terms.contains(&"validate".to_string()));
+        assert!(terms.contains(&"bearer".to_string()));
+        assert!(terms.contains(&"credential".to_string()));
+        assert!(!terms.contains(&"for".to_string()));
+        assert!(!terms.contains(&"1".to_string()));
     }
 
     #[test]

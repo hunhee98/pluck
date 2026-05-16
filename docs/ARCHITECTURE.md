@@ -20,6 +20,7 @@ Agent query
     ▼
 [MCP server (pluckd)]
   ├─ Parse tool call
+  ├─ Expand natural-language query with nearest indexed BM25 terms
   ├─ Hit BM25F index with a wide candidate pool
   ├─ Rerank BM25 candidates by embedding similarity
   ├─ Add small global semantic-rescue pool
