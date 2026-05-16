@@ -77,3 +77,11 @@ Repo-backed datasets set `kind: "repo-backed"` plus `root_env` and
 root, skipping common build/dependency directories. This lets the same format
 cover tokio, django, next.js, and future fixture repos without adding new Rust
 branches per project.
+
+The v0.3 suite contains 100 repo-backed natural-language cases:
+
+| Dataset | Queries | Default root |
+|---------|--------:|--------------|
+| `tokio-rust` | 34 | `/tmp/tokio/tokio` |
+| `django-python` | 33 | `/tmp/django/django` |
+| `nextjs-typescript` | 33 | `/tmp/next.js/packages/next` |

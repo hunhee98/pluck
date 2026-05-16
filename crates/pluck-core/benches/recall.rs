@@ -1,7 +1,8 @@
 //! Labeled recall@K / NDCG@10 bench for natural-language hybrid search.
 //!
 //! Gated by `PLUCK_RUN_RECALL_BENCH=1` because it loads the embedding
-//! model and, when present, indexes the real tokio checkout.
+//! model and, when present, indexes real tokio, django, and next.js
+//! checkouts.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -157,15 +158,30 @@ fn add_repo(idx: &PluckIndex, root: &Path) -> Result<bool> {
     let mut files = Vec::new();
     collect_supported_files(root, &mut files)?;
     let mut writer = idx.writer()?;
+    let mut skipped = 0usize;
     for path in files {
         let rel = path
             .strip_prefix(root)
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
-        for chunk in chunk_file(&path).with_context(|| format!("chunk {}", path.display()))? {
-            writer.add_chunk(&rel, &chunk)?;
+        match chunk_file(&path) {
+            Ok(chunks) => {
+                for chunk in chunks {
+                    writer.add_chunk(&rel, &chunk)?;
+                }
+            }
+            Err(err) => {
+                skipped += 1;
+                eprintln!("skipping unchunkable file {}: {err:#}", path.display());
+            }
         }
+    }
+    if skipped > 0 {
+        eprintln!(
+            "skipped {skipped} unchunkable files under {}",
+            root.display()
+        );
     }
     writer.commit()?;
     Ok(true)
@@ -179,7 +195,18 @@ fn collect_supported_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         let name = name.to_string_lossy();
         if matches!(
             name.as_ref(),
-            "target" | ".git" | "node_modules" | ".next" | "__pycache__" | ".venv" | "dist"
+            "target"
+                | ".git"
+                | "node_modules"
+                | ".next"
+                | "__pycache__"
+                | ".venv"
+                | "dist"
+                | "compiled"
+                | "fixtures"
+                | "__fixtures__"
+                | "__testfixtures__"
+                | "__tests__"
         ) {
             continue;
         }
