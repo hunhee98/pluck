@@ -62,7 +62,7 @@ impl Tokenizer for PluckTokenizer {
             let end = mat.end();
 
             let lowered = span.to_lowercase();
-            push_token(&mut tokens, &lowered, start, end);
+            let base_position = push_token(&mut tokens, &lowered, start, end);
 
             // Emit camelCase / snake_case parts as separate tokens at the
             // same offset. Searching `handler` therefore matches
@@ -73,6 +73,21 @@ impl Tokenizer for PluckTokenizer {
                     continue;
                 }
                 push_token(&mut tokens, &part, start, end);
+            }
+
+            // CJK scripts are often written without spaces, so the
+            // identifier regex sees an entire phrase as one token. Add
+            // character bigrams for those runs; a query for `用户` can
+            // now match a comment containing `用户认证`.
+            for ngram in cjk_bigrams(span) {
+                if ngram == lowered
+                    || tokens.iter().any(|token| {
+                        token.text == ngram && token.offset_from == start && token.offset_to == end
+                    })
+                {
+                    continue;
+                }
+                push_token_at_position(&mut tokens, &ngram, start, end, base_position);
             }
         }
         PluckTokenStream { tokens, cursor: -1 }
@@ -94,11 +109,22 @@ impl TokenStream for PluckTokenStream {
     }
 }
 
-fn push_token(tokens: &mut Vec<Token>, text: &str, offset_from: usize, offset_to: usize) {
+fn push_token(tokens: &mut Vec<Token>, text: &str, offset_from: usize, offset_to: usize) -> usize {
+    let position = tokens.len();
+    push_token_at_position(tokens, text, offset_from, offset_to, position);
+    position
+}
+
+fn push_token_at_position(
+    tokens: &mut Vec<Token>,
+    text: &str,
+    offset_from: usize,
+    offset_to: usize,
+    position: usize,
+) {
     if text.is_empty() {
         return;
     }
-    let position = tokens.len();
     tokens.push(Token {
         offset_from,
         offset_to,
@@ -171,6 +197,44 @@ pub fn split_identifier(token: &str) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+pub fn cjk_bigrams(token: &str) -> Vec<String> {
+    let mut grams = Vec::new();
+    let mut run = Vec::new();
+
+    for ch in token.chars() {
+        if is_cjk_char(ch) {
+            run.push(ch);
+        } else {
+            push_cjk_run_bigrams(&mut grams, &run);
+            run.clear();
+        }
+    }
+    push_cjk_run_bigrams(&mut grams, &run);
+
+    grams
+}
+
+fn push_cjk_run_bigrams(out: &mut Vec<String>, run: &[char]) {
+    if run.len() < 4 {
+        return;
+    }
+
+    for window in run.windows(2) {
+        out.push(window.iter().collect::<String>().to_lowercase());
+    }
+}
+
+fn is_cjk_char(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x3040..=0x30ff  // Hiragana + Katakana
+            | 0x3400..=0x4dbf  // CJK Extension A
+            | 0x4e00..=0x9fff  // CJK Unified Ideographs
+            | 0xac00..=0xd7af  // Hangul syllables
+            | 0xf900..=0xfaff  // CJK compatibility ideographs
+    )
 }
 
 /// Tokenize a natural-language BM25 query and drop high-frequency
@@ -253,6 +317,15 @@ mod tests {
     }
 
     #[test]
+    fn cjk_bigrams_cover_unspaced_phrases() {
+        assert_eq!(cjk_bigrams("用户认证"), vec!["用户", "户认", "认证"]);
+        assert_eq!(
+            cjk_bigrams("キャッシュ更新"),
+            vec!["キャ", "ャッ", "ッシ", "シュ", "ュ更", "更新"]
+        );
+    }
+
+    #[test]
     fn tokenizer_emits_whole_plus_parts_at_same_offset() {
         let toks = tokens_of("HandlerStack");
         assert!(toks.contains(&"handlerstack".to_string()));
@@ -276,6 +349,17 @@ mod tests {
         assert!(toks.contains(&"müller".to_string()));
         assert!(toks.contains(&"naïve".to_string()));
         assert!(toks.contains(&"façade".to_string()));
+    }
+
+    #[test]
+    fn tokenizer_emits_cjk_bigrams() {
+        let toks = tokens_of("用户认证 キャッシュ更新 토큰검증");
+        assert!(toks.contains(&"用户".to_string()));
+        assert!(toks.contains(&"认证".to_string()));
+        assert!(toks.contains(&"キャ".to_string()));
+        assert!(toks.contains(&"更新".to_string()));
+        assert!(toks.contains(&"토큰".to_string()));
+        assert!(toks.contains(&"검증".to_string()));
     }
 
     #[test]
