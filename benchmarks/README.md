@@ -71,3 +71,9 @@ PLUCK_RUN_RECALL_BENCH=1 cargo bench -p pluck-core --bench recall
 
 The bench prints Recall@5, Recall@10, MRR, and NDCG@10, then writes
 `benchmarks/results/recall-quality.json`.
+
+Repo-backed datasets set `kind: "repo-backed"` plus `root_env` and
+`root_default`. The bench indexes all supported source extensions under that
+root, skipping common build/dependency directories. This lets the same format
+cover tokio, django, next.js, and future fixture repos without adding new Rust
+branches per project.

@@ -29,6 +29,8 @@ struct QueryCase {
 struct Dataset {
     name: String,
     kind: DatasetKind,
+    root_env: Option<String>,
+    root_default: Option<String>,
     cases: Vec<QueryCase>,
 }
 
@@ -36,7 +38,7 @@ struct Dataset {
 #[serde(rename_all = "kebab-case")]
 enum DatasetKind {
     SyntheticRust,
-    TokioRust,
+    RepoBacked,
 }
 
 #[derive(Deserialize)]
@@ -106,13 +108,13 @@ fn add_synthetic(idx: &PluckIndex) -> Result<()> {
     writer.commit()
 }
 
-fn add_tokio(idx: &PluckIndex, root: &Path) -> Result<bool> {
+fn add_repo(idx: &PluckIndex, root: &Path) -> Result<bool> {
     if !root.exists() {
         return Ok(false);
     }
 
     let mut files = Vec::new();
-    collect_rs_files(root, &mut files)?;
+    collect_supported_files(root, &mut files)?;
     let mut writer = idx.writer()?;
     for path in files {
         let rel = path
@@ -128,18 +130,26 @@ fn add_tokio(idx: &PluckIndex, root: &Path) -> Result<bool> {
     Ok(true)
 }
 
-fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_supported_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name == "target" || name == ".git" {
+        if matches!(
+            name.as_ref(),
+            "target" | ".git" | "node_modules" | ".next" | "__pycache__" | ".venv" | "dist"
+        ) {
             continue;
         }
         if path.is_dir() {
-            collect_rs_files(&path, out)?;
-        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            collect_supported_files(&path, out)?;
+        } else if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .and_then(Language::from_extension)
+            .is_some()
+        {
             out.push(path);
         }
     }
@@ -292,6 +302,19 @@ fn load_suite() -> Result<QualitySuite> {
     serde_json::from_str(&raw).with_context(|| format!("parse quality suite {}", path.display()))
 }
 
+fn dataset_root(dataset: &Dataset) -> PathBuf {
+    if let Some(env_name) = &dataset.root_env {
+        if let Ok(value) = std::env::var(env_name) {
+            return PathBuf::from(value);
+        }
+    }
+    dataset
+        .root_default
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp/pluck-quality-repo"))
+}
+
 fn default_report_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../benchmarks/results/recall-quality.json")
@@ -354,11 +377,15 @@ fn main() -> Result<()> {
     let synthetic_idx = PluckIndex::in_ram()?.with_encoder(Arc::clone(&encoder));
     add_synthetic(&synthetic_idx)?;
 
-    let tokio_root = std::env::var("PLUCK_RECALL_TOKIO_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/tmp/tokio"));
-    let tokio_idx = PluckIndex::in_ram()?.with_encoder(encoder);
-    let has_tokio = add_tokio(&tokio_idx, &tokio_root)?;
+    let mut repo_indices = Vec::new();
+    for dataset in &suite.datasets {
+        if matches!(dataset.kind, DatasetKind::RepoBacked) {
+            let root = dataset_root(dataset);
+            let idx = PluckIndex::in_ram()?.with_encoder(Arc::clone(&encoder));
+            let available = add_repo(&idx, &root)?;
+            repo_indices.push((dataset.name.clone(), idx, available, root));
+        }
+    }
 
     println!();
     println!("model: `{model_id}`");
@@ -382,17 +409,23 @@ fn main() -> Result<()> {
                     print_summary_row(&report);
                     reports.push(report);
                 }
-                DatasetKind::TokioRust if has_tokio => {
-                    let report = dataset_report(&dataset.name, &dataset.cases, &tokio_idx, *alpha);
-                    print_summary_row(&report);
-                    reports.push(report);
-                }
-                DatasetKind::TokioRust => {
-                    eprintln!(
-                        "{} dataset skipped — {} does not exist",
-                        dataset.name,
-                        tokio_root.display()
-                    );
+                DatasetKind::RepoBacked => {
+                    let Some((_, idx, available, root)) =
+                        repo_indices.iter().find(|(name, _, _, _)| name == &dataset.name)
+                    else {
+                        continue;
+                    };
+                    if *available {
+                        let report = dataset_report(&dataset.name, &dataset.cases, idx, *alpha);
+                        print_summary_row(&report);
+                        reports.push(report);
+                    } else {
+                        eprintln!(
+                            "{} dataset skipped — {} does not exist",
+                            dataset.name,
+                            root.display()
+                        );
+                    }
                 }
             }
         }
@@ -414,10 +447,16 @@ fn main() -> Result<()> {
             DatasetKind::SyntheticRust => {
                 print_details(&dataset.name, &dataset.cases, &synthetic_idx, detail_alpha);
             }
-            DatasetKind::TokioRust if has_tokio => {
-                print_details(&dataset.name, &dataset.cases, &tokio_idx, detail_alpha);
+            DatasetKind::RepoBacked => {
+                let Some((_, idx, available, _)) =
+                    repo_indices.iter().find(|(name, _, _, _)| name == &dataset.name)
+                else {
+                    continue;
+                };
+                if *available {
+                    print_details(&dataset.name, &dataset.cases, idx, detail_alpha);
+                }
             }
-            DatasetKind::TokioRust => {}
         }
     }
     println!();

@@ -56,7 +56,10 @@ Each scenario carries:
 
 ## Headline chart (target)
 
-Input tokens per session, lower is better.
+Input tokens per session, lower is better. Headline savings use eligible
+retrieval workloads; control cases such as tiny files, first dedup calls, and
+byte-exact raw reads are published separately and expected to show little or no
+savings.
 
 ```
 Scenario × Repo:    fix-bug × medium
@@ -67,6 +70,14 @@ Scenario × Repo:    fix-bug × medium
 ```
 
 Full numbers under `benchmarks/results/` after every nightly run.
+
+## Headline claims
+
+| Claim | Scope |
+|-------|-------|
+| 84-88% fewer tokens | `pluck.read` outline mode on eligible medium-to-XL code reads |
+| 71% shorter output | Median `pluck.digest` compression across 6 build / test / CI fixtures |
+| 23% session savings | 5-query session-dedup bench, including first-call control cases |
 
 ## CI
 
