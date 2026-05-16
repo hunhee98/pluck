@@ -1,50 +1,166 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  RUSTFLAGS: -D warnings
 
 jobs:
-  fmt:
-    name: cargo fmt
+  test-bench-regression:
+    name: test, bench, regression gate
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+          fetch-depth: 0
+          submodules: recursive
 
-  clippy_and_test:
-    name: clippy + test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup show
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          components: clippy
+          cache-on-failure: true
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
 
-      # pluck.grep tests shell out to ripgrep.
-      - name: Install ripgrep (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - name: Install ripgrep (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install ripgrep
+      - name: Prepare benchmark output directory
+        run: mkdir -p benchmarks/results
 
-      - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Detect core benchmark gate changes
+        id: gate_changes
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: test (debug)
-        run: cargo test --workspace
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+            head_sha="${{ github.event.pull_request.head.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+            head_sha="${{ github.sha }}"
+            if [[ "$base_sha" =~ ^0+$ ]]; then
+              base_sha="$(git rev-parse "${head_sha}^")"
+            fi
+          fi
+
+          git diff --name-only "$base_sha" "$head_sha" | tee benchmarks/results/changed-files.txt
+
+          if grep -E '^(crates/pluck-core/|crates/pluck-mcp/src/|crates/pluck-mcp/benches/|scripts/regression-gate\.py|benchmarks/baseline\.json|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml)' benchmarks/results/changed-files.txt >/dev/null; then
+            echo "run_gate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_gate=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "Regression gate skipped."
+              echo
+              echo "No engine-core, MCP session, gated benchmark, baseline, Cargo, or Rust toolchain files changed."
+            } > benchmarks/results/regression-gate.log
+          fi
+
+      - name: Run tests
+        run: cargo test --all
+
+      - name: Run benches
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo bench --all 2>&1 | tee benchmarks/results/cargo-bench.log
+          if [[ -d target/criterion ]]; then
+            mkdir -p benchmarks/results/criterion
+            cp -R target/criterion/. benchmarks/results/criterion/
+          fi
+
+      - name: Run regression gate
+        id: regression_gate
+        if: steps.gate_changes.outputs.run_gate == 'true'
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/regression-gate.py 2>&1 | tee benchmarks/results/regression-gate.log
+
+      - name: Comment on regression failure
+        if: github.event_name == 'pull_request' && steps.regression_gate.outcome == 'failure'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- pluck-regression-gate -->';
+            const logPath = 'benchmarks/results/regression-gate.log';
+            const log = fs.existsSync(logPath)
+              ? fs.readFileSync(logPath, 'utf8').trim()
+              : 'regression-gate.log was not found.';
+            const escaped = log.replaceAll('```', '\\`\\`\\`');
+            const trimmed = escaped.length > 6000
+              ? `${escaped.slice(-6000)}\n\n[truncated: showing last 6000 characters]`
+              : escaped;
+            const body = [
+              marker,
+              '### Regression gate failed',
+              '',
+              'The gated benchmark comparison against `benchmarks/baseline.json` found a regression.',
+              '',
+              `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+              '',
+              '```text',
+              trimmed,
+              '```',
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const previous = comments.find((comment) =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
+
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-benchmark-results-${{ github.run_id }}
+          path: benchmarks/results/
+          if-no-files-found: warn
+          retention-days: 14
