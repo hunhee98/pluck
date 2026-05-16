@@ -87,6 +87,10 @@ NDCG@10, per-query ranks, and per-language breakdowns. Repo-backed datasets
 are skipped when their checkout is unavailable, so CI can compile the bench
 without requiring large external repos.
 
+The suite includes a synthetic multilingual set for Hangul, Chinese, and
+Japanese retrieval. Those cases exercise unspaced CJK comments so tokenizer
+changes cannot silently regress non-English code search.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on PRs and `main` pushes. It runs tests,

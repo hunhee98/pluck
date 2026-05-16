@@ -79,6 +79,30 @@
       ]
     },
     {
+      "name": "synthetic-multilingual",
+      "kind": "synthetic-multilingual",
+      "cases": [
+        {
+          "query": "토큰 검증",
+          "labels": [
+            { "path": "i18n_auth.rs", "symbol": "korean_token_check", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "用户 认证",
+          "labels": [
+            { "path": "i18n_user.rs", "symbol": "chinese_user_auth", "relevance": 3 }
+          ]
+        },
+        {
+          "query": "キャッシュ 更新",
+          "labels": [
+            { "path": "i18n_cache.rs", "symbol": "japanese_cache_refresh", "relevance": 3 }
+          ]
+        }
+      ]
+    },
+    {
       "name": "tokio-rust",
       "kind": "repo-backed",
       "root_env": "PLUCK_RECALL_TOKIO_ROOT",

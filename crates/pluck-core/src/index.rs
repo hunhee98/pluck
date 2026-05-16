@@ -1306,6 +1306,39 @@ class CorsMiddleware { wrap(): void {} }
     }
 
     #[test]
+    fn search_matches_unspaced_cjk_comments() {
+        let src = r#"
+/// 사용자토큰검증 진입점.
+pub fn korean_token_check(token: &str) -> bool {
+    let marker = "사용자토큰검증";
+    !token.is_empty()
+}
+
+/// 用户认证入口。
+pub fn chinese_user_auth(user: &str) -> bool {
+    let marker = "用户认证入口";
+    !user.is_empty()
+}
+
+/// キャッシュ更新処理。
+pub fn japanese_cache_refresh(key: &str) -> bool {
+    let marker = "キャッシュ更新処理";
+    !key.is_empty()
+}
+"#;
+        let idx = index_one_file(src, "i18n.rs", Language::Rust);
+
+        let korean = idx.search_with_cutoff("토큰 검증", 5, 0.0).unwrap();
+        assert_eq!(korean[0].symbol, "korean_token_check");
+
+        let chinese = idx.search_with_cutoff("用户 认证", 5, 0.0).unwrap();
+        assert_eq!(chinese[0].symbol, "chinese_user_auth");
+
+        let japanese = idx.search_with_cutoff("キャッシュ 更新", 5, 0.0).unwrap();
+        assert_eq!(japanese[0].symbol, "japanese_cache_refresh");
+    }
+
+    #[test]
     fn bm25f_boosts_symbol_match_above_body_match() {
         // Two chunks: one *is* the symbol `handleLogin`, the other just
         // mentions `handleLogin` inside its body. Symbol-match must rank

@@ -118,7 +118,7 @@ recall argument.
 - [ ] Expand labeled NL recall@K test set to 100 queries across tokio,
       django, next.js).
 - [x] Per-language NL recall breakdown.
-- [ ] Hangul / CJK retrieval-accuracy bench.
+- [x] Hangul / CJK retrieval-accuracy bench.
 - [x] NDCG@10 measurement infrastructure.
 - [ ] Continuous α from query embedding (replace
       `is_natural_language_query` heuristic with two centroid

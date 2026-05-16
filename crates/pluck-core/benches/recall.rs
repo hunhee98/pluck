@@ -39,6 +39,7 @@ struct Dataset {
 #[serde(rename_all = "kebab-case")]
 enum DatasetKind {
     SyntheticRust,
+    SyntheticMultilingual,
     RepoBacked,
 }
 
@@ -114,6 +115,33 @@ fn synthetic_repo() -> Vec<(&'static str, &'static str)> {
 fn add_synthetic(idx: &PluckIndex) -> Result<()> {
     let mut writer = idx.writer()?;
     for (path, src) in synthetic_repo() {
+        for chunk in chunk_source(src, Language::Rust)? {
+            writer.add_chunk(path, &chunk)?;
+        }
+    }
+    writer.commit()
+}
+
+fn synthetic_multilingual_repo() -> Vec<(&'static str, &'static str)> {
+    vec![
+        (
+            "i18n_auth.rs",
+            "/// 사용자토큰검증 진입점.\npub fn korean_token_check(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+        ),
+        (
+            "i18n_user.rs",
+            "/// 用户认证入口。\npub fn chinese_user_auth(user: &str) -> bool {\n    !user.is_empty()\n}\n",
+        ),
+        (
+            "i18n_cache.rs",
+            "/// キャッシュ更新処理。\npub fn japanese_cache_refresh(key: &str) -> bool {\n    !key.is_empty()\n}\n",
+        ),
+    ]
+}
+
+fn add_synthetic_multilingual(idx: &PluckIndex) -> Result<()> {
+    let mut writer = idx.writer()?;
+    for (path, src) in synthetic_multilingual_repo() {
         for chunk in chunk_source(src, Language::Rust)? {
             writer.add_chunk(path, &chunk)?;
         }
@@ -481,6 +509,8 @@ fn main() -> Result<()> {
 
     let synthetic_idx = PluckIndex::in_ram()?.with_encoder(Arc::clone(&encoder));
     add_synthetic(&synthetic_idx)?;
+    let multilingual_idx = PluckIndex::in_ram()?.with_encoder(Arc::clone(&encoder));
+    add_synthetic_multilingual(&multilingual_idx)?;
 
     let mut repo_indices = Vec::new();
     for dataset in &suite.datasets {
@@ -511,6 +541,12 @@ fn main() -> Result<()> {
                 DatasetKind::SyntheticRust => {
                     let report =
                         dataset_report(&dataset.name, &dataset.cases, &synthetic_idx, *alpha);
+                    print_summary_row(&report);
+                    reports.push(report);
+                }
+                DatasetKind::SyntheticMultilingual => {
+                    let report =
+                        dataset_report(&dataset.name, &dataset.cases, &multilingual_idx, *alpha);
                     print_summary_row(&report);
                     reports.push(report);
                 }
@@ -554,6 +590,14 @@ fn main() -> Result<()> {
         match dataset.kind {
             DatasetKind::SyntheticRust => {
                 print_details(&dataset.name, &dataset.cases, &synthetic_idx, detail_alpha);
+            }
+            DatasetKind::SyntheticMultilingual => {
+                print_details(
+                    &dataset.name,
+                    &dataset.cases,
+                    &multilingual_idx,
+                    detail_alpha,
+                );
             }
             DatasetKind::RepoBacked => {
                 let Some((_, idx, available, _)) = repo_indices
