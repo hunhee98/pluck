@@ -78,6 +78,11 @@ enum Command {
         /// Target agent. Default: claude.
         #[arg(long, value_enum, default_value_t = InitTarget::Claude)]
         target: InitTarget,
+        /// Adoption strength. `passive` only registers MCP; `strong` also
+        /// installs pluck-first rules / permissions; `aggressive` adds a
+        /// Claude Code hook that blocks Bash cat/grep/rg retrieval.
+        #[arg(long, value_enum, default_value_t = InitMode::Strong)]
+        mode: InitMode,
         /// Path to the pluckd binary. Default: resolved via `which pluckd`.
         #[arg(long)]
         pluckd: Option<PathBuf>,
@@ -114,6 +119,18 @@ enum InitTarget {
     Claude,
     /// Codex global `~/.codex/config.toml` (`[mcp_servers.pluck]`).
     Codex,
+    /// Cursor project `.cursor/mcp.json` in the current directory.
+    Cursor,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum InitMode {
+    /// Only register the MCP server.
+    Passive,
+    /// Register MCP plus pluck-first agent instructions / allow rules.
+    Strong,
+    /// Strong mode plus a Claude Code hook that blocks Bash retrieval.
+    Aggressive,
 }
 
 fn main() -> Result<()> {
@@ -142,9 +159,10 @@ fn main() -> Result<()> {
         } => cmd_search(&query, repo, top_k, compact, cutoff)?,
         Command::Init {
             target,
+            mode,
             pluckd,
             repo,
-        } => cmd_init(target, pluckd, repo)?,
+        } => cmd_init(target, mode, pluckd, repo)?,
         Command::Digest {
             path,
             format,
@@ -185,7 +203,12 @@ fn cmd_index(path: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn cmd_init(target: InitTarget, pluckd: Option<PathBuf>, repo: Option<PathBuf>) -> Result<()> {
+fn cmd_init(
+    target: InitTarget,
+    mode: InitMode,
+    pluckd: Option<PathBuf>,
+    repo: Option<PathBuf>,
+) -> Result<()> {
     let pluckd_path = match pluckd {
         Some(p) => p,
         None => resolve_pluckd_binary().context(
@@ -199,13 +222,31 @@ fn cmd_init(target: InitTarget, pluckd: Option<PathBuf>, repo: Option<PathBuf>) 
     };
 
     match target {
-        InitTarget::Claude => write_claude_mcp_json(&pluckd_path, &repo_path),
+        InitTarget::Claude => {
+            write_claude_mcp_json(&pluckd_path, &repo_path)?;
+            if mode != InitMode::Passive {
+                write_claude_adoption_layer(&repo_path, mode)?;
+            }
+            Ok(())
+        }
         InitTarget::Codex => {
             let config_path = dirs::home_dir()
                 .context("could not resolve home directory")?
                 .join(".codex")
                 .join("config.toml");
-            write_codex_config_toml(&config_path, &pluckd_path, &repo_path)
+            write_codex_config_toml(&config_path, &pluckd_path, &repo_path)?;
+            if mode != InitMode::Passive {
+                write_agents_md_policy(&repo_path)?;
+            }
+            Ok(())
+        }
+        InitTarget::Cursor => {
+            write_cursor_mcp_json(&pluckd_path, &repo_path)?;
+            if mode != InitMode::Passive {
+                write_cursor_adoption_layer(&repo_path)?;
+                write_agents_md_policy(&repo_path)?;
+            }
+            Ok(())
         }
     }
 }
@@ -228,6 +269,79 @@ fn resolve_pluckd_binary() -> Result<PathBuf> {
     }
     Ok(PathBuf::from(path))
 }
+
+const PLUCK_FIRST_POLICY: &str = r#"
+Use pluck before Bash for repository code retrieval.
+
+- Use `mcp__pluck__read` instead of `cat`, built-in Read, `head`, `tail`, or `sed -n` for files inside the indexed repo. Outline mode is the default; use `raw: true` only when byte-exact output is required.
+- Use `mcp__pluck__search` for conceptual lookup when you do not know the exact identifier or path.
+- Use `mcp__pluck__grep` instead of `grep` / `rg` when you need exact strings, regexes, TODOs, or all textual matches inside the repo.
+- Use `mcp__pluck__peek` when you need a symbol's interface and direct callees without paying for the body.
+- Use `mcp__pluck__symbol` when you know the symbol and need the body.
+- Use `mcp__pluck__expand` for local call chains, `mcp__pluck__impact` before refactors, and `mcp__pluck__deps` for import relationships.
+- Use `mcp__pluck__digest` for long cargo, npm, pytest, or GitHub Actions logs before pasting raw output into context.
+
+Fallback to Bash only for binary files, paths outside the indexed repo, byte-exact shell pipelines, unsupported formats, or when the pluck daemon is unreachable.
+"#;
+
+const CURSOR_PLUCK_FIRST_RULE: &str = r#"
+---
+description: Prefer pluck MCP for repository code retrieval
+alwaysApply: true
+---
+
+Use pluck MCP tools before built-in code search/read tools or terminal `cat`,
+`grep`, and `rg` for files inside this repository.
+
+- `mcp__pluck__read`: file reads; outline-first by default.
+- `mcp__pluck__search`: conceptual code lookup.
+- `mcp__pluck__grep`: exact strings, regexes, TODOs, and all textual matches.
+- `mcp__pluck__peek`: signature plus direct callees.
+- `mcp__pluck__symbol`: one symbol body.
+- `mcp__pluck__expand`: root body plus bounded callee chain.
+- `mcp__pluck__impact`: reverse call graph before refactors.
+- `mcp__pluck__deps`: file import graph.
+- `mcp__pluck__digest`: compress long build, test, install, and CI logs.
+
+Use terminal fallback only for binary files, paths outside the indexed repo,
+byte-exact shell pipelines, unsupported formats, or when pluck is unavailable.
+"#;
+
+const PLUCK_FIRST_BASH_HOOK: &str = r#"
+#!/usr/bin/env python3
+import json
+import re
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+
+command = ((data.get("tool_input") or {}).get("command") or "").strip()
+if not command:
+    sys.exit(0)
+
+retrieval = re.compile(
+    r"(^|[;&|\n]\s*)(cat|grep|rg|head|tail)\b|(^|[;&|\n]\s*)sed\s+-n\b"
+)
+
+if retrieval.search(command):
+    reason = (
+        "Use pluck first for repo code retrieval: mcp__pluck__read for "
+        "cat/head/tail/sed -n, mcp__pluck__grep for exact search, and "
+        "mcp__pluck__search for conceptual lookup. Fall back to Bash only "
+        "for binary files, paths outside the indexed repo, byte-exact shell "
+        "pipelines, unsupported formats, or when pluck is unavailable."
+    )
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+"#;
 
 /// Write or update `./.mcp.json` so that Claude Code launches `pluckd`
 /// on the next agent start. Preserves any other `mcpServers` entries
@@ -296,6 +410,115 @@ fn write_claude_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
     }
     println!("  command: {}", pluckd_path.display());
     println!("  repo:    {}", repo_path.display());
+    Ok(())
+}
+
+fn write_claude_adoption_layer(repo_path: &Path, mode: InitMode) -> Result<()> {
+    let claude_dir = repo_path.join(".claude");
+    std::fs::create_dir_all(&claude_dir)
+        .with_context(|| format!("create {}", claude_dir.display()))?;
+
+    write_claude_settings_json(repo_path, mode)?;
+
+    let rules_dir = claude_dir.join("rules");
+    std::fs::create_dir_all(&rules_dir)
+        .with_context(|| format!("create {}", rules_dir.display()))?;
+    write_text_if_changed(
+        &rules_dir.join("pluck-first.md"),
+        PLUCK_FIRST_POLICY.trim_start(),
+    )?;
+
+    if mode == InitMode::Aggressive {
+        let hooks_dir = claude_dir.join("hooks");
+        std::fs::create_dir_all(&hooks_dir)
+            .with_context(|| format!("create {}", hooks_dir.display()))?;
+        let hook_path = hooks_dir.join("pluck-first-bash.py");
+        write_text_if_changed(&hook_path, PLUCK_FIRST_BASH_HOOK.trim_start())?;
+        make_executable(&hook_path)?;
+    }
+
+    println!(
+        "pluck init: installed Claude Code pluck-first adoption layer in {}",
+        claude_dir.display()
+    );
+    if mode == InitMode::Aggressive {
+        println!("  mode:    aggressive (Bash cat/grep/rg retrieval is blocked by hook)");
+    } else {
+        println!("  mode:    strong (rules + mcp__pluck__* permission allow)");
+    }
+    Ok(())
+}
+
+fn write_claude_settings_json(repo_path: &Path, mode: InitMode) -> Result<()> {
+    let target = repo_path.join(".claude").join("settings.json");
+    let mut doc = read_json_object_or_empty(&target)?;
+
+    let permissions = doc
+        .as_object_mut()
+        .unwrap()
+        .entry("permissions")
+        .or_insert_with(|| serde_json::json!({}));
+    if !permissions.is_object() {
+        anyhow::bail!(
+            "`permissions` in {} is not an object; refusing to overwrite",
+            target.display()
+        );
+    }
+    json_array_insert_unique(permissions, "allow", "mcp__pluck__*")?;
+
+    if mode == InitMode::Aggressive {
+        let hooks = doc
+            .as_object_mut()
+            .unwrap()
+            .entry("hooks")
+            .or_insert_with(|| serde_json::json!({}));
+        if !hooks.is_object() {
+            anyhow::bail!(
+                "`hooks` in {} is not an object; refusing to overwrite",
+                target.display()
+            );
+        }
+        upsert_claude_pretool_hook(hooks)?;
+    }
+
+    write_json_pretty(&target, &doc)
+}
+
+fn upsert_claude_pretool_hook(hooks: &mut serde_json::Value) -> Result<()> {
+    let groups = hooks
+        .as_object_mut()
+        .unwrap()
+        .entry("PreToolUse")
+        .or_insert_with(|| serde_json::json!([]));
+    if !groups.is_array() {
+        anyhow::bail!("`hooks.PreToolUse` is not an array; refusing to overwrite");
+    }
+
+    let hook = serde_json::json!({
+        "type": "command",
+        "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/pluck-first-bash.py"
+    });
+    let group = serde_json::json!({
+        "matcher": "Bash",
+        "hooks": [hook]
+    });
+
+    let groups = groups.as_array_mut().unwrap();
+    let already_present = groups.iter().any(|g| {
+        g.get("matcher") == Some(&serde_json::Value::String("Bash".into()))
+            && g.get("hooks")
+                .and_then(|h| h.as_array())
+                .map(|hs| {
+                    hs.iter().any(|h| {
+                        h.get("command").and_then(|c| c.as_str())
+                            == Some("${CLAUDE_PROJECT_DIR}/.claude/hooks/pluck-first-bash.py")
+                    })
+                })
+                .unwrap_or(false)
+    });
+    if !already_present {
+        groups.push(group);
+    }
     Ok(())
 }
 
@@ -378,6 +601,182 @@ fn write_codex_config_toml(config_path: &Path, pluckd_path: &Path, repo_path: &P
     println!(
         "  note:    Codex's `mcp_servers` table is global; re-run from a different repo to switch."
     );
+    Ok(())
+}
+
+fn write_cursor_mcp_json(pluckd_path: &Path, repo_path: &Path) -> Result<()> {
+    let cursor_dir = repo_path.join(".cursor");
+    std::fs::create_dir_all(&cursor_dir)
+        .with_context(|| format!("create {}", cursor_dir.display()))?;
+    let target = cursor_dir.join("mcp.json");
+    let mut doc = read_json_object_or_empty(&target)?;
+
+    let servers = doc
+        .as_object_mut()
+        .unwrap()
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() {
+        anyhow::bail!(
+            "`mcpServers` in {} is not an object; refusing to overwrite",
+            target.display()
+        );
+    }
+
+    let prev = servers.as_object().unwrap().get("pluck").cloned();
+    let entry = serde_json::json!({
+        "command": pluckd_path.display().to_string(),
+        "args": ["--repo", repo_path.display().to_string()],
+    });
+    let already_correct = prev.as_ref() == Some(&entry);
+    servers
+        .as_object_mut()
+        .unwrap()
+        .insert("pluck".to_string(), entry);
+
+    write_json_pretty(&target, &doc)?;
+
+    if already_correct {
+        println!(
+            "pluck init: {} already registered the same pluck entry (no change)",
+            target.display()
+        );
+    } else if prev.is_some() {
+        println!("pluck init: updated `pluck` entry in {}", target.display());
+    } else {
+        println!(
+            "pluck init: registered `pluck` MCP server in {}",
+            target.display()
+        );
+    }
+    println!("  command: {}", pluckd_path.display());
+    println!("  repo:    {}", repo_path.display());
+    Ok(())
+}
+
+fn write_cursor_adoption_layer(repo_path: &Path) -> Result<()> {
+    let rules_dir = repo_path.join(".cursor").join("rules");
+    std::fs::create_dir_all(&rules_dir)
+        .with_context(|| format!("create {}", rules_dir.display()))?;
+    write_text_if_changed(
+        &rules_dir.join("pluck-first.mdc"),
+        CURSOR_PLUCK_FIRST_RULE.trim_start(),
+    )?;
+    println!(
+        "pluck init: installed Cursor pluck-first rule in {}",
+        rules_dir.display()
+    );
+    Ok(())
+}
+
+fn write_agents_md_policy(repo_path: &Path) -> Result<()> {
+    let target = repo_path.join("AGENTS.md");
+    upsert_markdown_block(&target, "Pluck-First Retrieval", PLUCK_FIRST_POLICY.trim())
+        .with_context(|| format!("write {}", target.display()))?;
+    println!(
+        "pluck init: installed pluck-first retrieval policy in {}",
+        target.display()
+    );
+    Ok(())
+}
+
+fn upsert_markdown_block(path: &Path, title: &str, body: &str) -> Result<()> {
+    const START: &str = "<!-- pluck:first:start -->";
+    const END: &str = "<!-- pluck:first:end -->";
+    let block = format!("{START}\n## {title}\n\n{body}\n{END}\n");
+    let existing = if path.exists() {
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
+    } else {
+        String::new()
+    };
+
+    let next = match (existing.find(START), existing.find(END)) {
+        (Some(s), Some(e)) if s < e => {
+            let end = e + END.len();
+            format!("{}{}{}", &existing[..s], block, &existing[end..])
+        }
+        _ if existing.trim().is_empty() => format!("# Agent Instructions\n\n{block}"),
+        _ => {
+            let sep = if existing.ends_with('\n') {
+                "\n"
+            } else {
+                "\n\n"
+            };
+            format!("{existing}{sep}{block}")
+        }
+    };
+
+    write_text_if_changed(path, &next)
+}
+
+fn read_json_object_or_empty(path: &Path) -> Result<serde_json::Value> {
+    let doc = if path.exists() {
+        let raw =
+            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "{} exists but is not valid JSON; fix or remove it before re-running `pluck init`",
+                path.display()
+            )
+        })?
+    } else {
+        serde_json::json!({})
+    };
+    if !doc.is_object() {
+        anyhow::bail!(
+            "{} top-level is not a JSON object; refusing to overwrite",
+            path.display()
+        );
+    }
+    Ok(doc)
+}
+
+fn json_array_insert_unique(parent: &mut serde_json::Value, key: &str, value: &str) -> Result<()> {
+    let arr = parent
+        .as_object_mut()
+        .unwrap()
+        .entry(key)
+        .or_insert_with(|| serde_json::json!([]));
+    if !arr.is_array() {
+        anyhow::bail!("`{key}` is not an array; refusing to overwrite");
+    }
+    let arr = arr.as_array_mut().unwrap();
+    if !arr.iter().any(|v| v.as_str() == Some(value)) {
+        arr.push(serde_json::Value::String(value.to_string()));
+    }
+    Ok(())
+}
+
+fn write_json_pretty(path: &Path, doc: &serde_json::Value) -> Result<()> {
+    let body = serde_json::to_string_pretty(doc).context("serialize JSON")?;
+    write_text_if_changed(path, &(body + "\n"))
+}
+
+fn write_text_if_changed(path: &Path, body: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    if path.exists()
+        && std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?
+            == body
+    {
+        return Ok(());
+    }
+    std::fs::write(path, body).with_context(|| format!("write {}", path.display()))
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)
+        .with_context(|| format!("stat {}", path.display()))?
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).with_context(|| format!("chmod +x {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -559,7 +958,9 @@ fn cmd_digest(path: Option<PathBuf>, format_name: Option<&str>, show_format: boo
 #[cfg(test)]
 mod tests {
     use super::{
-        cmd_digest, cmd_read, parse_line_range, write_claude_mcp_json, write_codex_config_toml,
+        cmd_digest, cmd_read, parse_line_range, write_agents_md_policy,
+        write_claude_adoption_layer, write_claude_mcp_json, write_codex_config_toml,
+        write_cursor_adoption_layer, write_cursor_mcp_json, InitMode,
     };
     use std::path::PathBuf;
 
@@ -694,6 +1095,94 @@ mod tests {
             msg.contains("not valid JSON"),
             "expected helpful diagnostic, got: {msg}"
         );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_claude_adoption_layer_adds_permissions_rules_and_hook() {
+        let tmp = tmp_dir("claude-adoption");
+        std::fs::create_dir_all(tmp.join(".claude")).unwrap();
+        std::fs::write(
+            tmp.join(".claude").join("settings.json"),
+            r#"{"permissions":{"allow":["Bash(cargo test *)"]}}"#,
+        )
+        .unwrap();
+
+        write_claude_adoption_layer(&tmp, InitMode::Aggressive).unwrap();
+        write_claude_adoption_layer(&tmp, InitMode::Aggressive).unwrap();
+
+        let settings = std::fs::read_to_string(tmp.join(".claude").join("settings.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        let allow = doc["permissions"]["allow"].as_array().unwrap();
+        assert!(allow.iter().any(|v| v == "Bash(cargo test *)"));
+        assert!(allow.iter().any(|v| v == "mcp__pluck__*"));
+        let hooks = doc["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(
+            hooks.iter().filter(|h| h["matcher"] == "Bash").count(),
+            1,
+            "same hook must not duplicate on re-run: {settings}"
+        );
+
+        let rule =
+            std::fs::read_to_string(tmp.join(".claude").join("rules").join("pluck-first.md"))
+                .unwrap();
+        assert!(rule.contains("Use pluck before Bash"));
+        let hook = std::fs::read_to_string(
+            tmp.join(".claude")
+                .join("hooks")
+                .join("pluck-first-bash.py"),
+        )
+        .unwrap();
+        assert!(hook.contains("mcp__pluck__read"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_agents_md_policy_upserts_marked_block() {
+        let tmp = tmp_dir("agents-policy");
+        let agents = tmp.join("AGENTS.md");
+        std::fs::write(&agents, "# Existing\n\nKeep this.\n").unwrap();
+
+        write_agents_md_policy(&tmp).unwrap();
+        write_agents_md_policy(&tmp).unwrap();
+
+        let body = std::fs::read_to_string(&agents).unwrap();
+        assert!(body.contains("Keep this."));
+        assert!(body.contains("<!-- pluck:first:start -->"));
+        assert_eq!(body.matches("Pluck-First Retrieval").count(), 1);
+        assert!(body.contains("mcp__pluck__search"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn write_cursor_mcp_json_and_rule_preserve_existing_config() {
+        let tmp = tmp_dir("cursor");
+        std::fs::create_dir_all(tmp.join(".cursor")).unwrap();
+        std::fs::write(
+            tmp.join(".cursor").join("mcp.json"),
+            r#"{"mcpServers":{"other":{"command":"node","args":["server.js"]}}}"#,
+        )
+        .unwrap();
+
+        write_cursor_mcp_json(
+            &PathBuf::from("/opt/pluck/bin/pluckd"),
+            &PathBuf::from(&tmp),
+        )
+        .unwrap();
+        write_cursor_adoption_layer(&tmp).unwrap();
+
+        let body = std::fs::read_to_string(tmp.join(".cursor").join("mcp.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(doc["mcpServers"]["other"]["command"], "node");
+        assert_eq!(
+            doc["mcpServers"]["pluck"]["command"],
+            "/opt/pluck/bin/pluckd"
+        );
+        let rule =
+            std::fs::read_to_string(tmp.join(".cursor").join("rules").join("pluck-first.mdc"))
+                .unwrap();
+        assert!(rule.contains("alwaysApply: true"));
+        assert!(rule.contains("mcp__pluck__grep"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

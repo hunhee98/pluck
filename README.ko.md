@@ -54,12 +54,18 @@ brew tap hunhee98/pluck && brew install pluck
 **Claude Code**
 ```bash
 pluck init --target claude
+pluck init --target claude --mode aggressive  # Bash cat/rg 검색까지 차단
 ```
 *(수동으로 추가하려면 `/plugin marketplace add hunhee98/pluck`을 입력해도 돼요)*
 
 **Codex**
 ```bash
 pluck init --target codex
+```
+
+**Cursor**
+```bash
+pluck init --target cursor
 ```
 
 ## 왜 pluck을 써야 할까요?

@@ -54,12 +54,18 @@ brew tap hunhee98/pluck && brew install pluck
 **Claude Code**
 ```bash
 pluck init --target claude
+pluck init --target claude --mode aggressive  # also blocks Bash cat/rg retrieval
 ```
 *(Alternatively, you can manually enable it via `/plugin marketplace add hunhee98/pluck`)*
 
 **Codex**
 ```bash
 pluck init --target codex
+```
+
+**Cursor**
+```bash
+pluck init --target cursor
 ```
 
 ## Why pluck?
