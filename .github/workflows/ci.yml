@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           submodules: recursive
@@ -101,7 +101,7 @@ jobs:
 
       - name: Comment on regression failure
         if: failure() && github.event_name == 'pull_request' && steps.regression_gate.outcome == 'failure'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         continue-on-error: true
         with:
           script: |
@@ -158,7 +158,7 @@ jobs:
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-benchmark-results-${{ github.run_id }}
           path: benchmarks/results/
