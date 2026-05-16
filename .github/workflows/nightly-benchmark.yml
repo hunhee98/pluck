@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -113,3 +113,54 @@ jobs:
           path: benchmarks/results/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish latest benchmark release assets
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BENCHMARK_RELEASE_TAG: benchmark-results
+        run: |
+          set -euo pipefail
+
+          release_dir="benchmarks/results/publish"
+          mkdir -p "$release_dir"
+
+          tar -czf "$release_dir/nightly-benchmark-results.tar.gz" \
+            --exclude publish \
+            -C benchmarks/results .
+
+          cp benchmarks/results/nightly-report.md "$release_dir/nightly-report.md"
+          cp benchmarks/results/nightly-summary.md "$release_dir/nightly-summary.md"
+
+          {
+            echo "# Latest benchmark results"
+            echo
+            echo "- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Updated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo
+            cat benchmarks/results/nightly-summary.md
+          } > "$release_dir/release-notes.md"
+
+          git tag -f "$BENCHMARK_RELEASE_TAG" "$GITHUB_SHA"
+          git push -f origin "$BENCHMARK_RELEASE_TAG"
+
+          if gh release view "$BENCHMARK_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$BENCHMARK_RELEASE_TAG" \
+              --title "Latest benchmark results" \
+              --notes-file "$release_dir/release-notes.md" \
+              --prerelease
+          else
+            gh release create "$BENCHMARK_RELEASE_TAG" \
+              --title "Latest benchmark results" \
+              --notes-file "$release_dir/release-notes.md" \
+              --prerelease \
+              --latest=false
+          fi
+
+          gh release upload "$BENCHMARK_RELEASE_TAG" \
+            "$release_dir/nightly-benchmark-results.tar.gz" \
+            "$release_dir/nightly-report.md" \
+            "$release_dir/nightly-summary.md" \
+            --clobber

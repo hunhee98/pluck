@@ -86,8 +86,12 @@ benchmark harnesses, uploads `benchmarks/results/`, and runs
 `scripts/regression-gate.py` when engine-core or benchmark files change.
 
 `.github/workflows/nightly-benchmark.yml` runs the full scenario suite on a
-schedule or via manual dispatch. Output is uploaded as a build artifact; the
-public dashboard is the next step.
+schedule or via manual dispatch. Output is uploaded as a build artifact and
+also published to the stable `benchmark-results` GitHub Release as:
+
+- `nightly-benchmark-results.tar.gz` — complete `benchmarks/results/` bundle
+- `nightly-report.md` — markdown report from `pluck-bench report`
+- `nightly-summary.md` — run inputs and scenario list
 
 ## Local run
 

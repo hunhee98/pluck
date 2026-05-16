@@ -24,7 +24,7 @@ expand, session dedup).
 | Semantic + incremental (RRF, watcher, session dedup) | ✅ shipped |
 | Regression gate (6 frozen metrics, baseline.json) | ✅ shipped |
 | CI + release gates | ✅ shipped — PR test/bench artifacts, release regression gate |
-| Plugin + release infra | 🟡 partial — pending broader agent installers |
+| Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | 🟡 partial — NDCG@10 lands in v0.3.0 |
 
 ---
@@ -101,8 +101,8 @@ quality.
       before binaries or crates are published.
 - [x] Nightly/manual full scenario benchmark workflow with artifact
       upload and a secret slot for Claude-backed runners.
-- [ ] Branch protection: require the CI check on `main`.
-- [ ] Publish benchmark artifacts to a public dashboard or release
+- [x] Branch protection: require the CI check on `main`.
+- [x] Publish benchmark artifacts to a public dashboard or release
       attachment, not only ephemeral Actions artifacts.
 
 ### Match and beat semble's NDCG@10
@@ -145,10 +145,9 @@ agentic coding traffic. The next tier closes credibility gaps.
 
 By here we have install data and real query distributions.
 
-- [ ] `pluck install` — install-time replacement of retrieval channel
-      across detected agents (Claude Code / Codex / Cursor): MCP +
-      hooks + permissions + rule files + shell wrappers (opt-in
-      `--aggressive`).
+- [x] `pluck init` — install-time replacement of retrieval channel
+      across Claude Code / Codex / Cursor: MCP + hooks + permissions
+      + rule files (opt-in `--mode aggressive` for Claude).
 - [ ] Adoption-rate counter (pluck call vs. bash fallback per session).
 - [ ] Tool-description A/B harness.
 - [ ] Real LLM-in-loop bench (Claude / Codex / Gemini on a fixed
