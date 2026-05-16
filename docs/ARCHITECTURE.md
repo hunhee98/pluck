@@ -20,8 +20,10 @@ Agent query
     ▼
 [MCP server (pluckd)]
   ├─ Parse tool call
-  ├─ Hit index
-  ├─ Fuse BM25 + semantic (RRF)
+  ├─ Hit BM25F index with a wide candidate pool
+  ├─ Rerank BM25 candidates by embedding similarity
+  ├─ Add small global semantic-rescue pool
+  ├─ Fuse BM25 + cascade + semantic rescue (RRF)
   ├─ Rank + filter (12% noise cutoff)
   ├─ Session dedup (skip chunks already returned this session)
   └─ Return snippet (with line numbers)

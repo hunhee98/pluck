@@ -296,7 +296,8 @@ impl PluckIndex {
         Ok(hits)
     }
 
-    /// Hybrid BM25 + semantic search via Reciprocal Rank Fusion.
+    /// Hybrid BM25 + semantic search via a two-stage cascade plus
+    /// Reciprocal Rank Fusion.
     ///
     /// If no encoder is attached the call transparently falls through to
     /// `search_with_cutoff` so existing call sites keep working.
@@ -304,8 +305,9 @@ impl PluckIndex {
     /// Tuning constants — both well-trodden values from the IR
     /// literature:
     ///   - `RRF_K = 60`: the standard reciprocal-rank smoothing constant
-    ///   - `OVERFETCH = 5`: pull 5×k candidates from each side before
-    ///     fusion, so the fusion has room to rerank
+    ///   - `BM25_OVERFETCH = 20`: first-stage lexical recall pool
+    ///   - `SEMANTIC_RESCUE_OVERFETCH = 5`: pure semantic rescue pool
+    ///     for queries with weak or zero lexical overlap
     pub fn search_hybrid(
         &self,
         query_str: &str,
@@ -314,43 +316,60 @@ impl PluckIndex {
         alpha: Option<f32>,
     ) -> Result<Vec<SearchHit>> {
         const RRF_K: f32 = 60.0;
-        const OVERFETCH: usize = 5;
+        const BM25_OVERFETCH: usize = 20;
+        const BM25_MIN_CANDIDATES: usize = 100;
+        const SEMANTIC_RESCUE_OVERFETCH: usize = 5;
+        const SEMANTIC_RESCUE_MIN_CANDIDATES: usize = 20;
 
         let Some(encoder) = &self.encoder else {
             return self.search_with_cutoff(query_str, k, cutoff_frac);
         };
 
-        let candidate_k = (k * OVERFETCH).max(20);
+        let bm25_candidate_k = (k * BM25_OVERFETCH).max(BM25_MIN_CANDIDATES);
+        let semantic_rescue_k = (k * SEMANTIC_RESCUE_OVERFETCH).max(SEMANTIC_RESCUE_MIN_CANDIDATES);
         let semantic_alpha = alpha
             .unwrap_or_else(|| inferred_rrf_alpha(query_str))
             .clamp(0.0, 1.0);
         let bm25_alpha = 1.0 - semantic_alpha;
 
-        // BM25 side.
-        let bm25 = self.search_with_cutoff_inner(query_str, candidate_k, 0.0, true)?;
+        // Stage 1: widen the lexical pool aggressively. BM25F is cheap
+        // and keeps identifier/path-ish precision high, so it is the
+        // right recall gate before semantic reranking.
+        let bm25 = self.search_with_cutoff_inner(query_str, bm25_candidate_k, 0.0, true)?;
+        let use_semantic_rescue = should_run_semantic_rescue(query_str, bm25.len(), k);
+        let (cascade_alpha, semantic_rescue_alpha) =
+            semantic_weight_split(semantic_alpha, !bm25.is_empty(), use_semantic_rescue);
 
-        // Semantic side: encode the query, then score it against *every*
-        // chunk that has an embedding. Without this, queries whose terms
-        // never appear lexically (the whole reason we added embeddings)
-        // would still get filtered out by the BM25 pre-pass.
+        // Stage 2: rerank the BM25 pool by query/chunk embedding
+        // similarity. This is the cascade signal: semantic ranking over
+        // a bounded lexical candidate set instead of immediately trusting
+        // global nearest neighbors.
         let q_emb = encoder.encode(query_str)?;
         let embeddings = self
             .embeddings
             .read()
             .map_err(|_| anyhow::anyhow!("embeddings lock poisoned"))?;
+        let cascade_sem = rerank_bm25_candidates_by_embedding(&bm25, &embeddings, &q_emb);
 
-        // Sort all chunk_ids by cosine, keep candidate_k.
-        let mut scored: Vec<(u64, f32)> = embeddings
-            .iter()
-            .map(|(id, v)| (*id, cosine_similarity(&q_emb, v)))
-            .collect();
+        // Semantic rescue: keep a smaller global semantic top-k so
+        // concept-only queries with no lexical overlap still work. This
+        // preserves the original hybrid behavior, but the main semantic
+        // weight now flows through the BM25 cascade above.
+        let mut scored: Vec<(u64, f32)> = if semantic_rescue_alpha > 0.0 {
+            embeddings
+                .iter()
+                .map(|(id, v)| (*id, cosine_similarity(&q_emb, v)))
+                .collect()
+        } else {
+            Vec::new()
+        };
         drop(embeddings);
         scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(candidate_k);
+        scored.truncate(semantic_rescue_k);
 
-        // Hydrate the top semantic chunk_ids into SearchHits via tantivy.
-        // This second tantivy roundtrip is bounded by `candidate_k`
-        // documents.
+        // Hydrate the top semantic-rescue chunk_ids into SearchHits via
+        // tantivy. This second tantivy roundtrip is bounded by
+        // `semantic_rescue_k` documents.
         let reader = self.inner.reader().context("open reader")?;
         let searcher = reader.searcher();
         let mut sem: Vec<(SearchHit, f32)> = Vec::with_capacity(scored.len());
@@ -371,7 +390,8 @@ impl PluckIndex {
         // semantic stay balanced. Natural-language queries get a
         // semantic-heavy alpha so prose-aligned hits are not drowned by
         // lexical noise from large real repos.
-        let mut rrf: HashMap<u64, (SearchHit, f32)> = HashMap::with_capacity(candidate_k);
+        let mut rrf: HashMap<u64, (SearchHit, f32)> =
+            HashMap::with_capacity(bm25.len() + cascade_sem.len() + sem.len());
 
         for (rank, hit) in bm25.iter().enumerate() {
             let bonus = bm25_alpha / (RRF_K + rank as f32 + 1.0);
@@ -379,8 +399,14 @@ impl PluckIndex {
                 .and_modify(|(_, s)| *s += bonus)
                 .or_insert_with(|| (hit.clone(), bonus));
         }
+        for (rank, (hit, _cos)) in cascade_sem.iter().enumerate() {
+            let bonus = cascade_alpha / (RRF_K + rank as f32 + 1.0);
+            rrf.entry(hit.chunk_id)
+                .and_modify(|(_, s)| *s += bonus)
+                .or_insert_with(|| (hit.clone(), bonus));
+        }
         for (rank, (hit, _cos)) in sem.iter().enumerate() {
-            let bonus = semantic_alpha / (RRF_K + rank as f32 + 1.0);
+            let bonus = semantic_rescue_alpha / (RRF_K + rank as f32 + 1.0);
             rrf.entry(hit.chunk_id)
                 .and_modify(|(_, s)| *s += bonus)
                 .or_insert_with(|| (hit.clone(), bonus));
@@ -918,6 +944,41 @@ fn has_camel_case_shape(token: &str) -> bool {
     false
 }
 
+fn should_run_semantic_rescue(query: &str, bm25_candidates: usize, requested_hits: usize) -> bool {
+    bm25_candidates < requested_hits || is_natural_language_query(query)
+}
+
+fn semantic_weight_split(
+    semantic_alpha: f32,
+    has_bm25_candidates: bool,
+    use_semantic_rescue: bool,
+) -> (f32, f32) {
+    if has_bm25_candidates && use_semantic_rescue {
+        (semantic_alpha * 0.7, semantic_alpha * 0.3)
+    } else if has_bm25_candidates {
+        (semantic_alpha, 0.0)
+    } else {
+        (0.0, semantic_alpha)
+    }
+}
+
+fn rerank_bm25_candidates_by_embedding(
+    bm25: &[SearchHit],
+    embeddings: &HashMap<u64, Vec<f32>>,
+    query_embedding: &[f32],
+) -> Vec<(SearchHit, f32)> {
+    let mut reranked: Vec<(SearchHit, f32)> = bm25
+        .iter()
+        .filter_map(|hit| {
+            embeddings
+                .get(&hit.chunk_id)
+                .map(|embedding| (hit.clone(), cosine_similarity(query_embedding, embedding)))
+        })
+        .collect();
+    reranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    reranked
+}
+
 fn normalized_bm25_query(query: &str) -> String {
     if !is_natural_language_query(query) {
         return query.to_string();
@@ -1197,6 +1258,50 @@ function unrelatedHelper(): void {}
         assert_eq!(inferred_rrf_alpha("How do I validate token"), 0.7);
         assert_eq!(inferred_rrf_alpha("Runtime::spawn future"), 0.5);
         assert_eq!(inferred_rrf_alpha("validateToken"), 0.5);
+    }
+
+    #[test]
+    fn semantic_weight_prefers_cascade_when_bm25_candidates_exist() {
+        let (cascade, rescue) = semantic_weight_split(0.7, true, true);
+        assert!((cascade - 0.49).abs() < f32::EPSILON);
+        assert!((rescue - 0.21).abs() < 0.000001);
+        assert_eq!(semantic_weight_split(0.7, true, false), (0.7, 0.0));
+        assert_eq!(semantic_weight_split(0.7, false, true), (0.0, 0.7));
+    }
+
+    #[test]
+    fn semantic_rescue_runs_for_natural_language_or_sparse_bm25() {
+        assert!(should_run_semantic_rescue(
+            "receive value from channel asynchronously",
+            100,
+            10
+        ));
+        assert!(should_run_semantic_rescue("validateToken", 2, 10));
+        assert!(!should_run_semantic_rescue("validateToken", 20, 10));
+    }
+
+    #[test]
+    fn rerank_bm25_candidates_uses_embedding_similarity() {
+        fn hit(chunk_id: u64, symbol: &str) -> SearchHit {
+            SearchHit {
+                score: 1.0,
+                chunk_id,
+                path: "x.rs".to_string(),
+                symbol: symbol.to_string(),
+                kind: ChunkKind::Function,
+                start_line: 1,
+                end_line: 1,
+                signature: String::new(),
+                content: String::new(),
+            }
+        }
+
+        let bm25 = vec![hit(1, "lexical_first"), hit(2, "semantic_first")];
+        let embeddings = HashMap::from([(1, vec![0.0, 1.0]), (2, vec![1.0, 0.0])]);
+        let reranked = rerank_bm25_candidates_by_embedding(&bm25, &embeddings, &[1.0, 0.0]);
+
+        assert_eq!(reranked[0].0.symbol, "semantic_first");
+        assert_eq!(reranked[1].0.symbol, "lexical_first");
     }
 
     #[test]
