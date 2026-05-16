@@ -19,7 +19,7 @@ path = "src/main.rs"
 doctest = false
 
 [dependencies]
-pluck-core = { path = "../pluck-core", version = "0.2.0" }
+pluck-core = { path = "../pluck-core", version = "0.3.0" }
 rmcp = { workspace = true, features = ["server", "macros", "schemars", "transport-io"] }
 schemars = "0.8"
 tokio.workspace = true
