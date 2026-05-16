@@ -12,18 +12,50 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
 jobs:
-  test-bench-regression:
-    name: test, bench, regression gate
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup show
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+
+      - name: Run tests
+        run: cargo test --all
+
+  bench-regression:
+    name: bench, regression gate
+    if: github.event_name == 'pull_request'
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -54,16 +86,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base_sha="${{ github.event.pull_request.base.sha }}"
-            head_sha="${{ github.event.pull_request.head.sha }}"
-          else
-            base_sha="${{ github.event.before }}"
-            head_sha="${{ github.sha }}"
-            if [[ "$base_sha" =~ ^0+$ ]]; then
-              base_sha="$(git rev-parse "${head_sha}^")"
-            fi
-          fi
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
 
           git diff --name-only "$base_sha" "$head_sha" | tee benchmarks/results/changed-files.txt
 
@@ -77,9 +101,6 @@ jobs:
               echo "No engine-core, MCP session, gated benchmark, baseline, Cargo, or Rust toolchain files changed."
             } > benchmarks/results/regression-gate.log
           fi
-
-      - name: Run tests
-        run: cargo test --all
 
       - name: Run benches
         shell: bash
@@ -100,7 +121,7 @@ jobs:
           python3 scripts/regression-gate.py 2>&1 | tee benchmarks/results/regression-gate.log
 
       - name: Comment on regression failure
-        if: failure() && github.event_name == 'pull_request' && steps.regression_gate.outcome == 'failure'
+        if: failure() && steps.regression_gate.outcome == 'failure'
         uses: actions/github-script@v8
         continue-on-error: true
         with:
