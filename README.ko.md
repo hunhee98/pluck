@@ -39,7 +39,22 @@ pluck 사용:  pluck.plan "auth-token 만료 버그 수정" → 다음 3-5 retri
 
 `pluck`은 AI 코딩 에이전트의 기본 검색 도구로 사용되도록 만들어졌어요.
 
-### 1. pluck 설치하기
+### 1. 에이전트 설치 프롬프트 붙여 넣기
+
+```text
+Install and configure pluck for this repo. Make pluck the default code
+retrieval layer: prefer mcp__pluck__read, mcp__pluck__search, mcp__pluck__grep,
+and the other mcp__pluck__* tools before cat, grep, rg, or built-in file reads.
+If pluck is missing, install pluck-mcp and pluck-cli. Register pluckd as an MCP
+server for this repo. Use the strongest setup your environment supports: MCP
+allowlist, tool permissions, hooks/command blockers, or project rules. Verify
+that a repo code search uses mcp__pluck__* before finishing.
+```
+
+안전 체크와 폴백 지시까지 포함한 더 강한 버전은
+[전체 에이전트 설치 프롬프트](docs/AGENT_INSTALL.md)를 쓰면 돼요.
+
+### 2. 직접 설정하고 싶다면
 
 ```bash
 # crates.io에서 데몬 + 독립 실행형 CLI 설치
@@ -48,8 +63,6 @@ cargo install pluck-mcp pluck-cli
 # 또는 Homebrew tap을 통해 설치
 brew tap hunhee98/pluck && brew install pluck
 ```
-
-### 2. 에이전트에 추가하기
 
 **Claude Code**
 ```bash
@@ -66,14 +79,6 @@ pluck init --target codex --mode strong  # MCP + AGENTS.md pluck-first 정책
 ```bash
 pluck init --target cursor --mode strong  # MCP + always-apply Cursor rule
 ```
-
-**MCP를 지원하는 다른 에이전트**
-
-[범용 에이전트 설치 프롬프트](docs/AGENT_INSTALL.md)를 에이전트에
-붙여 넣으면 돼요. 이 프롬프트는 pluck을 설치하고
-`pluckd --repo <repo-root>`를 등록한 뒤, 해당 에이전트가 지원하는 가장
-강한 강제 레이어(MCP allowlist, tool permission, command blocker, hook,
-project rule)를 쓰도록 지시해요.
 
 ## 왜 pluck을 써야 할까요?
 

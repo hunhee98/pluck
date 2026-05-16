@@ -43,7 +43,22 @@ With pluck:     pluck.plan "fix auth-token expiry"  → 3-5 next-call recommenda
 
 Pluck is designed to be the default retrieval tool for your AI coding agents.
 
-### 1. Install Pluck
+### 1. Paste the Agent Install Prompt
+
+```text
+Install and configure pluck for this repo. Make pluck the default code
+retrieval layer: prefer mcp__pluck__read, mcp__pluck__search, mcp__pluck__grep,
+and the other mcp__pluck__* tools before cat, grep, rg, or built-in file reads.
+If pluck is missing, install pluck-mcp and pluck-cli. Register pluckd as an MCP
+server for this repo. Use the strongest setup your environment supports: MCP
+allowlist, tool permissions, hooks/command blockers, or project rules. Verify
+that a repo code search uses mcp__pluck__* before finishing.
+```
+
+For the stricter version with safety checks and fallback instructions, use the
+[full agent install prompt](docs/AGENT_INSTALL.md).
+
+### 2. Or set it up manually
 
 ```bash
 # Daemon + standalone CLI from crates.io
@@ -52,8 +67,6 @@ cargo install pluck-mcp pluck-cli
 # Or via Homebrew tap
 brew tap hunhee98/pluck && brew install pluck
 ```
-
-### 2. Add to your Agent
 
 **Claude Code**
 ```bash
@@ -70,13 +83,6 @@ pluck init --target codex --mode strong  # MCP + AGENTS.md pluck-first policy
 ```bash
 pluck init --target cursor --mode strong  # MCP + always-apply Cursor rule
 ```
-
-**Any MCP-capable agent**
-
-Paste the [universal agent install prompt](docs/AGENT_INSTALL.md) into the
-agent. It installs pluck, registers `pluckd --repo <repo-root>`, and asks the
-agent to use the strongest enforcement layer it supports: MCP allowlists,
-tool permissions, command blockers, hooks, or project rules.
 
 ## Why pluck?
 

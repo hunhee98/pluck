@@ -5,7 +5,25 @@ yet, or when the agent has its own MCP / tool-permission format. The prompt
 asks the agent to install pluck, register the MCP server, and use the strongest
 available pluck-first enforcement layer.
 
-## Copy-paste Prompt
+## Recommended Short Prompt
+
+Copy this first. It is intentionally short so users can paste it into any
+coding agent without thinking about that agent's config format.
+
+```text
+Install and configure pluck for this repo. Make pluck the default code
+retrieval layer: prefer mcp__pluck__read, mcp__pluck__search, mcp__pluck__grep,
+and the other mcp__pluck__* tools before cat, grep, rg, or built-in file reads.
+If pluck is missing, install pluck-mcp and pluck-cli. Register pluckd as an MCP
+server for this repo. Use the strongest setup your environment supports: MCP
+allowlist, tool permissions, hooks/command blockers, or project rules. Verify
+that a repo code search uses mcp__pluck__* before finishing.
+```
+
+## Full Prompt
+
+Use this stricter version when the agent needs more explicit safety checks,
+fallback instructions, or enforcement details.
 
 ```text
 You are configuring this coding environment to use pluck as the default
