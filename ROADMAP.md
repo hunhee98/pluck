@@ -46,8 +46,8 @@ embarrassment.
 ### One-command install
 - [x] `pluck init --target claude` writes `.mcp.json`.
 - [x] `pluck init --target codex` writes the Codex MCP block.
-- [ ] `pluck init --target cursor` once Cursor's MCP config path
-      stabilizes (otherwise defer to v0.5.0).
+- [x] `pluck init --target cursor` writes `.cursor/mcp.json` and a
+      pluck-first Cursor rule.
 
 ### Safety
 - [x] `pluck.read --raw` on a binary returns a cat-style diagnostic

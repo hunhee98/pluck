@@ -1,6 +1,6 @@
 # pluck — Claude Code plugin
 
-Fast and token-friendly code reading for AI coding agents. Six MCP
+Fast and token-friendly code reading for AI coding agents. Ten MCP
 tools that replace `cat` / `grep` with symbol-aware retrieval,
 sub-millisecond warm search, and a `raw` fallback that preserves
 cat/grep parity byte-for-byte.
@@ -35,7 +35,7 @@ claude --plugin-dir /path/to/pluck/plugins/claude-code
 | `.claude-plugin/plugin.json` | Plugin identity (name, version, homepage) |
 | `.mcp.json` | Registers `pluckd` as an MCP server, scoped to `${REPO_ROOT}` |
 | `settings.json` | Pre-allows `mcp__pluck__*` so the agent never gets prompted per tool call |
-| `CLAUDE.md.tmpl` | Suggested CLAUDE.md snippet — add it to your project root or `~/.claude/CLAUDE.md` manually (auto-injection is not yet a Claude Code feature) |
+| `CLAUDE.md.tmpl` | Suggested CLAUDE.md snippet — add it to your project root or `~/.claude/CLAUDE.md` manually, or run `pluck init --target claude --mode strong` |
 
 ## Verify
 
@@ -50,8 +50,8 @@ return ranked chunks. If it still shells out to `cat` / `rg`, check:
 
 1. `pluckd --version` runs from your shell.
 2. `claude mcp list` shows `pluck` as connected.
-3. Your project's CLAUDE.md (or `~/.claude/CLAUDE.md`) includes the
-   contents of `CLAUDE.md.tmpl` — without that snippet the agent has
+3. Your project has the pluck-first policy from `pluck init --target claude --mode strong`
+   or the contents of `CLAUDE.md.tmpl` — without that snippet the agent has
    no policy hint to prefer pluck over Bash.
 
 ## Uninstall

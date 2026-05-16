@@ -1,12 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "mcp__pluck__read",
-      "mcp__pluck__search",
-      "mcp__pluck__grep",
-      "mcp__pluck__symbol",
-      "mcp__pluck__peek",
-      "mcp__pluck__expand"
+      "mcp__pluck__*"
     ]
   }
 }

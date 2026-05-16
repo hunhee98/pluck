@@ -9,9 +9,10 @@ a file inside the indexed repo. Use outline mode for large code files,
 
 ## WHY
 
-Outline mode gives the agent the file's symbols and line ranges without
-paying for every body. The original bytes stay reachable, so defaulting
-to pluck costs fewer tokens without losing capability.
+Outline mode gives the agent the file's symbols, line ranges, and tiny
+helper bodies without paying for every body. The original bytes stay
+reachable, so defaulting to pluck costs fewer tokens without losing
+capability.
 
 ## FALLBACK
 
