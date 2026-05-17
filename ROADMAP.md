@@ -26,7 +26,7 @@ expand, session dedup).
 | CI + release gates | ✅ shipped — PR test/bench artifacts, release regression gate |
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
-| v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, agent install, TSX fixes landed on main |
+| v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, agent install, TSX fixes landed on main |
 
 ---
 
@@ -155,7 +155,7 @@ released as `0.4.0`, not `0.3.1`.
 - [x] CSS / SCSS chunker: selector and at-rule chunks.
 - [x] Markdown / MDX chunker: heading sections and fenced code blocks.
 - [x] YAML / JSON / TOML chunker: path/key chunks for config-heavy repos.
-- [ ] Dockerfile chunker: stages, instructions, and dependency/install blocks.
+- [x] Dockerfile chunker: stages, instructions, and dependency/install blocks.
 - [ ] Shell chunker: functions, case arms, and major script sections.
 - [ ] Chunker accuracy fixtures for all v0.4 formats.
 - [ ] Regression-gate metric for "format chunk recovery" so coverage does not

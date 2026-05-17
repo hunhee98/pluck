@@ -813,8 +813,7 @@ fn cmd_read(path: &Path, raw: bool, lines: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Language::from_extension(ext);
+    let lang = Language::from_path(path);
     let display = path.to_string_lossy();
     let outline = outline_source(&src, lang, &display);
     print!("{}", render_outline(&outline));

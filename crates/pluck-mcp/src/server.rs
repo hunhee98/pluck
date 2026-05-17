@@ -375,8 +375,7 @@ impl PluckServer {
             return Ok(out);
         }
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let lang = Language::from_extension(ext);
+        let lang = Language::from_path(&path);
         let display = path.to_string_lossy();
         let outline = outline_source(&src, lang, &display);
         Ok(render_outline(&outline))

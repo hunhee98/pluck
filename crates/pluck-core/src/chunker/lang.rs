@@ -1,5 +1,4 @@
-use std::sync::OnceLock;
-
+use std::{path::Path, sync::OnceLock};
 use tree_sitter::{Language, Query};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,9 +18,28 @@ pub enum Lang {
     Json,
     Yaml,
     Toml,
+    Dockerfile,
 }
 
 impl Lang {
+    pub fn from_path(path: &Path) -> Option<Self> {
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let lower_name = file_name.to_ascii_lowercase();
+        if lower_name == "dockerfile"
+            || lower_name.starts_with("dockerfile.")
+            || lower_name == "containerfile"
+            || lower_name.starts_with("containerfile.")
+        {
+            return Some(Self::Dockerfile);
+        }
+
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if ext.eq_ignore_ascii_case("dockerfile") {
+            return Some(Self::Dockerfile);
+        }
+        Self::from_extension(ext)
+    }
+
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
             "ts" => Some(Self::TypeScript),
@@ -39,6 +57,7 @@ impl Lang {
             "json" => Some(Self::Json),
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
+            "dockerfile" => Some(Self::Dockerfile),
             _ => None,
         }
     }
@@ -56,8 +75,8 @@ impl Lang {
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Scss => tree_sitter_scss::language(),
             Self::Markdown | Self::Mdx => tree_sitter_md_025::LANGUAGE.into(),
-            Self::Json | Self::Yaml | Self::Toml => {
-                unreachable!("config formats use the custom key-path chunker")
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => {
+                unreachable!("custom formats do not use tree-sitter")
             }
         }
     }
@@ -75,7 +94,7 @@ impl Lang {
             Self::Css => include_str!("queries/css.scm"),
             Self::Scss => include_str!("queries/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
         }
     }
 
@@ -94,7 +113,7 @@ impl Lang {
             Self::Css => include_str!("queries/callees/css.scm"),
             Self::Scss => include_str!("queries/callees/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/callees/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
         }
     }
 
@@ -115,7 +134,7 @@ impl Lang {
             Self::Css => include_str!("queries/imports/css.scm"),
             Self::Scss => include_str!("queries/imports/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/imports/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
         }
     }
 
@@ -191,7 +210,7 @@ impl Lang {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Mdx)).as_ref()
             }
-            Self::Json | Self::Yaml | Self::Toml => None,
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => None,
         }
     }
 }

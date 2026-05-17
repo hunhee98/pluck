@@ -17,6 +17,8 @@ Versioning follows [SemVer](https://semver.org).
 - Markdown / MDX chunker support for heading sections and fenced code blocks.
 - YAML / JSON / TOML chunker support for config key-path chunks such as
   `scripts.build`, `services.web.image`, and `workspace.dependencies.serde`.
+- Dockerfile / Containerfile chunker support for build stages, individual
+  instructions, dependency-manifest copies, and install blocks.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.

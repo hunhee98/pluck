@@ -114,10 +114,7 @@ fn is_source_event(event: &notify::Event) -> bool {
 fn keep_source_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     paths
         .into_iter()
-        .filter(|p| {
-            let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-            Language::from_extension(ext).is_some()
-        })
+        .filter(|p| Language::from_path(p).is_some())
         .collect()
 }
 
