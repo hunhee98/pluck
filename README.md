@@ -218,7 +218,8 @@ Maintainer release flow lives in
   hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
 - **v0.4.0 — active train**: Java + repo-format coverage — Java, HTML,
   prompt-first agent install, TSX grammar fixes, CSS/SCSS, Markdown/MDX,
-  YAML/JSON/TOML, Dockerfile, and Shell landed; fixtures/gate hardening remain.
+  YAML/JSON/TOML, Dockerfile, Shell, and format recovery gate landed;
+  path/token-budget hardening remain.
 - **v0.5.0**: Systems + JVM tier — C, C++, Kotlin, SQL, Terraform/HCL.
 - **v0.6.0**: App-framework tier — Ruby, PHP, Swift, Vue, Svelte, Astro,
   OpenAPI / GraphQL.

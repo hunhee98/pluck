@@ -113,12 +113,23 @@ def measure_digest() -> dict[str, float]:
     return {"digest_savings_pct": savings}
 
 
+def measure_format_recovery() -> dict[str, float]:
+    """Format chunk recovery: **100.0%**  (gated metric: format_chunk_recovery_pct)"""
+    out = run_bench("pluck-core", "format_recovery")
+    recovery = extract(
+        r"Format chunk recovery:\s*\*\*([\d.]+)%\*\*",
+        out,
+    )
+    return {"format_chunk_recovery_pct": recovery}
+
+
 COLLECTORS = [
     measure_chunker,
     measure_indexer,
     measure_freshness,
     measure_session_dedup,
     measure_digest,
+    measure_format_recovery,
 ]
 
 

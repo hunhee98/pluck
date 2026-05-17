@@ -20,7 +20,7 @@ benchmarks/
 │   ├── bash.yaml         (Claude Code + Bash only — baseline)
 │   ├── ripgrep.yaml      (Claude Code + ripgrep)
 │   └── pluck.yaml        (Claude Code + pluck MCP)
-├── quality/          labeled retrieval datasets for recall / NDCG benches
+├── quality/          labeled retrieval and format recovery fixture suites
 ├── repos/            git submodules pointing at fixed revisions of test repos
 └── results/          per-run JSON output (gitignored after Phase 0)
 ```
@@ -85,3 +85,18 @@ The v0.3 suite contains 100 repo-backed natural-language cases:
 | `tokio-rust` | 34 | `/tmp/tokio/tokio` |
 | `django-python` | 33 | `/tmp/django/django` |
 | `nextjs-typescript` | 33 | `/tmp/next.js/packages/next` |
+
+## Format Recovery Quality
+
+`quality/format-chunk-recovery.json` is the v0.4 functional fixture suite for
+Java, TSX, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, and Shell
+chunk recovery.
+
+Run it locally with:
+
+```bash
+cargo bench -p pluck-core --bench format_recovery
+```
+
+The regression gate tracks `format_chunk_recovery_pct`; every expected chunk
+property, parse-ok guard, and minimum chunk count must recover at 100%.

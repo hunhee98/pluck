@@ -24,7 +24,9 @@
       "tolerance_pct": 60,
       "regression_direction": "lower",
       "unit": "files/sec",
-      "source": "bench indexer \u2014 medium (500 files) files/s column"
+      "min_value": 900.0,
+      "source": "bench indexer \u2014 medium (500 files) files/s column",
+      "note": "Absolute floor avoids false negatives from GitHub runner throughput variance while still catching severe indexer slowdowns."
     },
     "warm_search_p50_ms_medium": {
       "value": 0.07,
@@ -55,6 +57,15 @@
       "regression_direction": "lower",
       "unit": "%",
       "source": "bench digest \u2014 median savings across 6 fixtures (cargo-build, cargo-test-green, pnpm-install, yarn-install, pytest-green, gha-log)"
+    },
+    "format_chunk_recovery_pct": {
+      "value": 100.0,
+      "tolerance_pct": 0,
+      "regression_direction": "lower",
+      "unit": "%",
+      "min_value": 100.0,
+      "source": "bench format_recovery \u2014 v0.4 format fixture chunk recovery",
+      "note": "Functional gate: every expected v0.4 format chunk, parse-ok guard, and minimum chunk count must be recovered."
     }
   }
 }

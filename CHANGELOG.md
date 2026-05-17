@@ -21,6 +21,11 @@ Versioning follows [SemVer](https://semver.org).
   instructions, dependency-manifest copies, and install blocks.
 - Shell chunker support for functions, `case` arms, and major comment-marked
   script sections.
+- v0.4 format chunk recovery fixture suite and regression-gate metric, covering
+  Java, TSX, HTML, CSS/SCSS, Markdown/MDX, config, Dockerfile, and Shell chunk
+  coverage.
+- Regression gate hardening for indexer throughput now uses an absolute CI
+  floor to avoid false negatives from hosted-runner variance.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.
