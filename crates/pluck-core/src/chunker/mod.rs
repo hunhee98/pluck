@@ -177,6 +177,8 @@ fn chunk_source_with_meta_labeled(
         // so multi-line parameter lists are captured intact.
         let signature = if lang == Language::Html {
             html_signature(&content)
+        } else if matches!(lang, Language::Css | Language::Scss) {
+            css_signature(&content)
         } else {
             match node.child_by_field_name("body") {
                 Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
@@ -337,12 +339,14 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Tsx
         | Language::JavaScript
         | Language::Go
-        | Language::Java => line.strip_prefix("//").map(|s| s.trim().to_string()),
+        | Language::Java
+        | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Html => line
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
             .map(|s| s.trim().to_string()),
+        Language::Css => None,
     }
 }
 
@@ -417,6 +421,10 @@ fn kind_from_prefix(prefix: &str) -> ChunkKind {
 }
 
 fn normalize_symbol(lang: Language, raw_symbol: &str, content: &str) -> String {
+    if matches!(lang, Language::Css | Language::Scss) {
+        return normalize_css_symbol(raw_symbol, content);
+    }
+
     if lang != Language::Html {
         return raw_symbol.to_string();
     }
@@ -550,6 +558,33 @@ fn html_attr_value(content: &str, name: &str) -> Option<String> {
 
 fn html_non_empty_attr_value(content: &str, name: &str) -> Option<String> {
     html_attr_value(content, name).filter(|value| !value.is_empty())
+}
+
+fn css_signature(content: &str) -> String {
+    css_rule_header(content)
+        .unwrap_or_else(|| content.lines().next().unwrap_or("").trim_end().to_string())
+}
+
+fn normalize_css_symbol(raw_symbol: &str, content: &str) -> String {
+    let raw = collapse_ascii_ws(raw_symbol.trim());
+    if content.trim_start().starts_with('@') {
+        return css_rule_header(content).unwrap_or(raw);
+    }
+    raw
+}
+
+fn css_rule_header(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+    let end = trimmed
+        .find('{')
+        .or_else(|| trimmed.find(';'))
+        .unwrap_or(trimmed.len());
+    let header = collapse_ascii_ws(trimmed[..end].trim());
+    (!header.is_empty()).then_some(header)
+}
+
+fn collapse_ascii_ws(input: &str) -> String {
+    input.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -1178,6 +1213,109 @@ class Handler {
             names.contains(&"app-icon"),
             "self-closing custom element missing: {chunks:?}"
         );
+    }
+
+    // ── CSS / SCSS ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_css_selector_and_at_rule_chunks() {
+        assert_eq!(Language::from_extension("css"), Some(Language::Css));
+
+        let src = r#"
+/* Theme root */
+:root {
+  --brand: #0f766e;
+}
+
+.button,
+.link:hover {
+  color: var(--brand);
+}
+
+@media (min-width: 720px) {
+  .button {
+    display: inline-flex;
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+"#;
+        let chunks = chunk_source(src, Language::Css).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&":root"), "missing :root: {chunks:?}");
+        assert!(
+            names.contains(&".button, .link:hover"),
+            "missing multi-selector rule: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"@media (min-width: 720px)"),
+            "missing @media chunk: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"@keyframes spin"),
+            "missing @keyframes chunk: {chunks:?}"
+        );
+
+        let media = chunks
+            .iter()
+            .find(|c| c.symbol == "@media (min-width: 720px)")
+            .unwrap();
+        assert_eq!(media.kind, ChunkKind::Module);
+        assert_eq!(media.signature, "@media (min-width: 720px)");
+    }
+
+    #[test]
+    fn test_scss_selector_mixin_function_and_nested_chunks() {
+        assert_eq!(Language::from_extension("scss"), Some(Language::Scss));
+
+        let src = r#"
+// Card theme helpers.
+@mixin card-tone($tone) {
+  border-color: $tone;
+}
+
+@function spacing($step) {
+  @return $step * 0.25rem;
+}
+
+.dashboard {
+  @include card-tone(#0f766e);
+
+  &__item {
+    padding: spacing(4);
+  }
+}
+"#;
+        let chunks = chunk_source(src, Language::Scss).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(
+            names.contains(&"@mixin card-tone($tone)"),
+            "missing mixin: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"@function spacing($step)"),
+            "missing function: {chunks:?}"
+        );
+        assert!(
+            names.contains(&".dashboard"),
+            "missing parent selector: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"&__item"),
+            "missing nested selector: {chunks:?}"
+        );
+
+        let mixin = chunks
+            .iter()
+            .find(|c| c.symbol == "@mixin card-tone($tone)")
+            .unwrap();
+        assert_eq!(mixin.kind, ChunkKind::Module);
+        assert!(mixin.doc_comment.contains("Card theme helpers."));
     }
 
     #[test]
