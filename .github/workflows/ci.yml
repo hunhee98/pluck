@@ -36,6 +36,9 @@ jobs:
       - name: Verify version metadata
         run: python3 scripts/version-check.py --allow-unreleased
 
+      - name: Print maintainer release status
+        run: python3 scripts/maintainer-status.py
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:

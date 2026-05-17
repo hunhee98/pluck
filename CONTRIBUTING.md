@@ -61,6 +61,9 @@ One change per commit. No bundled "while I'm at it" refactors.
 
 Every PR must choose a release lane before it merges. See
 [`docs/VERSIONING.md`](docs/VERSIONING.md) for the full policy.
+Maintainers and coding agents should follow
+[`docs/MAINTAINER_LOOP.md`](docs/MAINTAINER_LOOP.md) so version, release,
+issue, and roadmap decisions are made after every merge.
 
 - `patch` — bug fixes, security updates, CI/release repairs, and docs that
   clarify already-shipped behavior.
@@ -156,6 +159,8 @@ If you edit anything under `docs/mcp-descriptions/`:
 - [ ] Version lane selected in the PR body.
 - [ ] Roadmap mapping selected or updated in the PR body.
 - [ ] Patch backport decision selected in the PR body.
+- [ ] Post-merge release action selected in the PR body.
+- [ ] `python3 scripts/maintainer-status.py` output reviewed.
 - [ ] ROADMAP updated if the PR changes user-visible behavior.
 - [ ] CHANGELOG entry under `[Unreleased]`.
 

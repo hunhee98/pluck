@@ -110,6 +110,11 @@ Every PR should carry this release decision explicitly:
 8. Before merge, confirm whether the change ships in the current minor
    train or needs a maintenance-branch patch release.
 
+The full maintainer workflow lives in
+[`docs/MAINTAINER_LOOP.md`](MAINTAINER_LOOP.md). Run
+`python3 scripts/maintainer-status.py` after merges so release state is not
+implicit.
+
 ## Release PR checklist
 
 Release PRs do the mechanical version work in one place:

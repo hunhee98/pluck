@@ -31,12 +31,20 @@ Patch backport:
 - [ ] Not needed.
 - [ ] Needed for `release/v0.__.x` because this fixes shipped behavior.
 
+Post-merge release action:
+
+- [ ] Continue active roadmap train; no release cut now.
+- [ ] Cut patch release from `release/v0.__.x`.
+- [ ] Cut minor release/tag after this PR.
+- [ ] No release action because this is `no-release`.
+
 Version work:
 
 - [ ] CHANGELOG updated under `[Unreleased]`, or not needed because:
 - [ ] ROADMAP updated if this changes user-visible behavior.
 - [ ] Cargo version bump included only if this is a release, patch, or train
       bump PR.
+- [ ] `python3 scripts/maintainer-status.py` output reviewed.
 
 ## Test plan
 
