@@ -20,6 +20,8 @@ Versioning follows [SemVer](https://semver.org).
   versions, Cargo.lock, and CHANGELOG are out of sync.
 - Patch release lane and `scripts/bump-version.py`, so `v0.x.y` maintenance
   releases are a first-class path instead of an ad hoc manual edit.
+- Roadmap-vs-release decision rules, separating planned minor milestones from
+  independent patch decisions for shipped bugs and support issues.
 
 ### Changed
 
