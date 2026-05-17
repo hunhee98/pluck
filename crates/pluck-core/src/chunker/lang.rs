@@ -16,6 +16,9 @@ pub enum Lang {
     Scss,
     Markdown,
     Mdx,
+    Json,
+    Yaml,
+    Toml,
 }
 
 impl Lang {
@@ -33,6 +36,9 @@ impl Lang {
             "scss" => Some(Self::Scss),
             "md" | "markdown" => Some(Self::Markdown),
             "mdx" => Some(Self::Mdx),
+            "json" => Some(Self::Json),
+            "yaml" | "yml" => Some(Self::Yaml),
+            "toml" => Some(Self::Toml),
             _ => None,
         }
     }
@@ -50,6 +56,9 @@ impl Lang {
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Scss => tree_sitter_scss::language(),
             Self::Markdown | Self::Mdx => tree_sitter_md_025::LANGUAGE.into(),
+            Self::Json | Self::Yaml | Self::Toml => {
+                unreachable!("config formats use the custom key-path chunker")
+            }
         }
     }
 
@@ -66,6 +75,7 @@ impl Lang {
             Self::Css => include_str!("queries/css.scm"),
             Self::Scss => include_str!("queries/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/markdown.scm"),
+            Self::Json | Self::Yaml | Self::Toml => "",
         }
     }
 
@@ -84,6 +94,7 @@ impl Lang {
             Self::Css => include_str!("queries/callees/css.scm"),
             Self::Scss => include_str!("queries/callees/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/callees/markdown.scm"),
+            Self::Json | Self::Yaml | Self::Toml => "",
         }
     }
 
@@ -104,7 +115,12 @@ impl Lang {
             Self::Css => include_str!("queries/imports/css.scm"),
             Self::Scss => include_str!("queries/imports/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/imports/markdown.scm"),
+            Self::Json | Self::Yaml | Self::Toml => "",
         }
+    }
+
+    pub fn is_config_format(self) -> bool {
+        matches!(self, Self::Json | Self::Yaml | Self::Toml)
     }
 
     /// Cached compiled tree-sitter query combining the chunker query (captures
@@ -114,6 +130,9 @@ impl Lang {
     /// tree once with this merged query.
     pub fn compiled_query(self) -> Option<&'static Query> {
         fn build(lang: Lang) -> Option<Query> {
+            if lang.is_config_format() {
+                return None;
+            }
             let ts = lang.ts_language();
             let combined = format!(
                 "{}\n{}\n{}",
@@ -172,6 +191,7 @@ impl Lang {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Mdx)).as_ref()
             }
+            Self::Json | Self::Yaml | Self::Toml => None,
         }
     }
 }

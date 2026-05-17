@@ -1,3 +1,4 @@
+mod config;
 mod lang;
 mod types;
 
@@ -49,6 +50,10 @@ fn chunk_source_with_meta_labeled(
     lang: Language,
     source_path: Option<&str>,
 ) -> Result<ChunkResult> {
+    if lang.is_config_format() {
+        return Ok(config::chunk_config_source(src, lang));
+    }
+
     let Some(query) = lang.compiled_query() else {
         return Ok(ChunkResult::default());
     };
@@ -348,7 +353,12 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
             .map(|s| s.trim().to_string()),
-        Language::Css | Language::Markdown | Language::Mdx => None,
+        Language::Css
+        | Language::Markdown
+        | Language::Mdx
+        | Language::Json
+        | Language::Yaml
+        | Language::Toml => None,
     }
 }
 
@@ -1483,6 +1493,134 @@ import Widget from "./Widget"
         let src = "# C# notes\n\nUse the parser safely.\n";
         let chunks = chunk_source(src, Language::Markdown).unwrap();
         assert_eq!(chunks[0].symbol, "C# notes");
+    }
+
+    // ── YAML / JSON / TOML ───────────────────────────────────────────────
+
+    #[test]
+    fn test_json_path_key_chunks() {
+        assert_eq!(Language::from_extension("json"), Some(Language::Json));
+
+        let src = r#"
+{
+  "scripts": {
+    "build": "cargo build",
+    "test": "cargo test"
+  },
+  "dependencies": {
+    "serde": { "version": "1", "features": ["derive"] }
+  },
+  "plugins": [
+    { "name": "auth", "enabled": true }
+  ]
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Json).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"scripts.build"),
+            "missing nested script key: {result:?}"
+        );
+        assert!(
+            names.contains(&"dependencies.serde.version"),
+            "missing nested dependency key: {result:?}"
+        );
+        assert!(
+            names.contains(&"plugins[0].name"),
+            "missing array object key: {result:?}"
+        );
+
+        let scripts = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "scripts")
+            .unwrap();
+        assert_eq!(scripts.kind, ChunkKind::Module);
+        assert!(scripts.content.contains("\"build\""));
+    }
+
+    #[test]
+    fn test_yaml_path_key_chunks() {
+        assert_eq!(Language::from_extension("yaml"), Some(Language::Yaml));
+        assert_eq!(Language::from_extension("yml"), Some(Language::Yaml));
+
+        let src = r#"
+services:
+  web:
+    image: nginx:latest
+    env:
+      - name: RUST_LOG
+        value: debug
+  worker:
+    command: cargo run
+"#;
+        let result = chunk_source_with_meta(src, Language::Yaml).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"services.web.image"),
+            "missing YAML nested key: {result:?}"
+        );
+        assert!(
+            names.contains(&"services.web.env.name"),
+            "missing YAML list item key: {result:?}"
+        );
+        assert!(
+            names.contains(&"services.worker.command"),
+            "missing YAML sibling key: {result:?}"
+        );
+
+        let web = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "services.web")
+            .unwrap();
+        assert!(web.content.contains("image: nginx"));
+        assert!(web.content.contains("env:"));
+    }
+
+    #[test]
+    fn test_toml_path_key_chunks() {
+        assert_eq!(Language::from_extension("toml"), Some(Language::Toml));
+
+        let src = r#"
+[package]
+name = "pluck"
+version = "0.4.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[[bin]]
+name = "pluck"
+path = "src/main.rs"
+"#;
+        let result = chunk_source_with_meta(src, Language::Toml).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"package.name"),
+            "missing TOML package key: {result:?}"
+        );
+        assert!(
+            names.contains(&"workspace.dependencies.serde"),
+            "missing TOML dependency key: {result:?}"
+        );
+        assert!(
+            names.contains(&"bin[].path"),
+            "missing TOML array table key: {result:?}"
+        );
+
+        let deps = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "workspace.dependencies")
+            .unwrap();
+        assert!(deps.content.contains("serde"));
     }
 
     #[test]
