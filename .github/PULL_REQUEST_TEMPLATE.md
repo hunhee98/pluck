@@ -6,6 +6,26 @@ asks for the parts that affect review speed. -->
 <!-- 1-3 sentences. What changes, and why this PR rather than a
 different shape. -->
 
+## Version impact
+
+Release lane:
+
+- [ ] `patch` — bug/security/CI/docs fix for already-shipped behavior.
+- [ ] `minor-train` — new user-visible capability or behavior for the next
+      `v0.x.0` train.
+- [ ] `release-now` — this PR cuts a GitHub/crates.io release.
+- [ ] `no-release` — test-only or internal-only, no user-visible behavior.
+
+Target version:
+
+- `v0.__.__`
+
+Version work:
+
+- [ ] CHANGELOG updated under `[Unreleased]`, or not needed because:
+- [ ] ROADMAP updated if this changes user-visible behavior.
+- [ ] Cargo version bump included only if this is a release/train bump PR.
+
 ## Test plan
 
 <!-- Bulleted list of what you ran. Be specific.

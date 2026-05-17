@@ -6,6 +6,56 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- Java chunker support for classes, interfaces, records, annotation types,
+  enums, methods, constructors, imports, and direct callees.
+- HTML chunker support for semantic elements, component-like blocks, and
+  script/style sections.
+- Prompt-first agent install flow so unknown MCP-capable agents can
+  self-configure pluck with their strongest available rule, hook, allowlist,
+  or permission layer.
+- Version-management guide and release metadata check. PRs now declare their
+  release lane, and tag releases fail if Cargo versions, internal dependency
+  versions, Cargo.lock, and CHANGELOG are out of sync.
+
+### Changed
+
+- Workspace version advanced to `0.4.0` for the active v0.4 release train.
+- README / ROADMAP install guidance now makes the agent prompt the primary
+  adoption path instead of a hidden fallback.
+- Roadmap image removed so version progress is tracked in text instead of a
+  frequently stale generated asset.
+
+### Fixed
+
+- TSX files now parse with tree-sitter's TSX grammar instead of the plain
+  TypeScript grammar. Parse warnings include the repo-relative path, and index
+  summaries count files with parse errors.
+
+## [0.3.0] — 2026-05-17
+
+### Added
+
+- PR CI on `ubuntu-latest`: `cargo test --all`, benchmark artifacts, and
+  conditional regression-gate comments on PRs.
+- Release gate for tags: tests and `scripts/regression-gate.py` must pass
+  before binaries or crates are published.
+- Nightly/manual full-scenario benchmark workflow with artifact upload and a
+  secret slot for Claude-backed runners.
+- Labeled retrieval suite with Recall@K / MRR / NDCG@10 reporting, expanded to
+  100 natural-language queries across tokio, django, and next.js.
+- Retrieval-quality improvements: two-stage BM25 + embedding cascade, query
+  expansion, continuous hybrid weighting from query embeddings, BM25 stopword
+  filtering, and per-language / CJK retrieval breakdowns.
+
+### Changed
+
+- Benchmark artifacts are published beyond ephemeral local runs, so release
+  claims can cite committed or attached result files.
+- README roadmap and performance claims were aligned to the public benchmark
+  evidence shipped with the repo.
+
 ## [0.2.0] — 2026-05-15
 
 ### Added
@@ -105,6 +155,7 @@ Internal development cutline before the first crates.io publish.
 - CI workflows, Claude Code plugin manifest, CONTRIBUTING,
   CODE_OF_CONDUCT, GitHub issue + PR templates.
 
-[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/hunhee98/pluck/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hunhee98/pluck/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hunhee98/pluck/releases/tag/v0.1.0

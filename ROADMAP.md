@@ -26,7 +26,7 @@ expand, session dedup).
 | CI + release gates | ✅ shipped — PR test/bench artifacts, release regression gate |
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
-| v0.4 release train | 🟡 in progress — Java chunker landed on main |
+| v0.4 release train | 🟡 in progress — Java, HTML, agent install, TSX fixes landed on main |
 
 ---
 
@@ -35,6 +35,8 @@ expand, session dedup).
 The roadmap is the release train. When work lands on `main`, it should be
 assigned to the next unreleased version here.
 
+- Full versioning and release-lane rules live in
+  [`docs/VERSIONING.md`](docs/VERSIONING.md).
 - `v0.x.0` minor releases are user-visible capabilities: new languages,
   formats, tools, integrations, ranking behavior, storage layers, or benchmark
   surfaces.
@@ -145,6 +147,8 @@ released as `0.4.0`, not `0.3.1`.
       pluck with the strongest available allowlist / hook / rule layer.
 - [x] HTML chunker: semantic elements, component-ish blocks, script/style
       sections.
+- [x] TSX parser correctness: `.tsx` uses the TSX grammar, parse warnings name
+      the path, and index summaries count parse-error files.
 - [ ] CSS / SCSS chunker: selector and at-rule chunks.
 - [ ] Markdown / MDX chunker: heading sections and fenced code blocks.
 - [ ] YAML / JSON / TOML chunker: path/key chunks for config-heavy repos.

@@ -33,6 +33,9 @@ jobs:
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
 
+      - name: Verify version metadata
+        run: python3 scripts/version-check.py --allow-unreleased
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -106,24 +109,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ripgrep
 
-      - name: Run benches
-        if: steps.gate_changes.outputs.run_gate == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo bench --all --benches 2>&1 | tee benchmarks/results/cargo-bench.log
-          if [[ -d target/criterion ]]; then
-            mkdir -p benchmarks/results/criterion
-            cp -R target/criterion/. benchmarks/results/criterion/
-          fi
-
-      - name: Run regression gate
+      - name: Run gated benches and regression gate
         id: regression_gate
         if: steps.gate_changes.outputs.run_gate == 'true'
         shell: bash
         run: |
           set -o pipefail
-          python3 scripts/regression-gate.py 2>&1 | tee benchmarks/results/regression-gate.log
+          python3 scripts/regression-gate.py 2>&1 \
+            | tee benchmarks/results/regression-gate.log benchmarks/results/cargo-bench.log
+
+      - name: Collect benchmark reports
+        if: always() && steps.gate_changes.outputs.run_gate == 'true'
+        shell: bash
+        run: |
+          if [[ -d target/criterion ]]; then
+            mkdir -p benchmarks/results/criterion
+            cp -R target/criterion/. benchmarks/results/criterion/
+          fi
 
       - name: Comment on regression failure
         if: failure() && steps.regression_gate.outcome == 'failure'

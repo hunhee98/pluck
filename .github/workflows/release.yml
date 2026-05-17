@@ -25,6 +25,9 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Verify release metadata
+        run: python3 scripts/version-check.py --tag "${GITHUB_REF_NAME}"
+
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
 

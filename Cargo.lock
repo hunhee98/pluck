@@ -2189,7 +2189,7 @@ dependencies = [
 
 [[package]]
 name = "pluck-bench"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2205,7 +2205,7 @@ dependencies = [
 
 [[package]]
 name = "pluck-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "pluck-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "pluck-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
