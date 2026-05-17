@@ -179,6 +179,8 @@ fn chunk_source_with_meta_labeled(
             html_signature(&content)
         } else if matches!(lang, Language::Css | Language::Scss) {
             css_signature(&content)
+        } else if matches!(lang, Language::Markdown | Language::Mdx) {
+            markdown_signature(&content)
         } else {
             match node.child_by_field_name("body") {
                 Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
@@ -346,7 +348,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
             .map(|s| s.trim().to_string()),
-        Language::Css => None,
+        Language::Css | Language::Markdown | Language::Mdx => None,
     }
 }
 
@@ -423,6 +425,10 @@ fn kind_from_prefix(prefix: &str) -> ChunkKind {
 fn normalize_symbol(lang: Language, raw_symbol: &str, content: &str) -> String {
     if matches!(lang, Language::Css | Language::Scss) {
         return normalize_css_symbol(raw_symbol, content);
+    }
+
+    if matches!(lang, Language::Markdown | Language::Mdx) {
+        return normalize_markdown_symbol(raw_symbol, content);
     }
 
     if lang != Language::Html {
@@ -581,6 +587,66 @@ fn css_rule_header(content: &str) -> Option<String> {
         .unwrap_or(trimmed.len());
     let header = collapse_ascii_ws(trimmed[..end].trim());
     (!header.is_empty()).then_some(header)
+}
+
+fn normalize_markdown_symbol(raw_symbol: &str, content: &str) -> String {
+    markdown_fence_symbol(content)
+        .or_else(|| markdown_heading_text(raw_symbol))
+        .or_else(|| markdown_heading_text(content))
+        .unwrap_or_else(|| collapse_ascii_ws(raw_symbol.trim()))
+}
+
+fn markdown_signature(content: &str) -> String {
+    content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| collapse_ascii_ws(line.trim_end()))
+        .unwrap_or_default()
+}
+
+fn markdown_heading_text(input: &str) -> Option<String> {
+    let first = input.lines().find(|line| !line.trim().is_empty())?.trim();
+    let text = if first.starts_with('#') {
+        let without_marker = first.trim_start_matches('#').trim_start();
+        let trimmed = without_marker.trim_end();
+        let without_hashes = trimmed.trim_end_matches('#');
+        if without_hashes.len() != trimmed.len()
+            && without_hashes
+                .chars()
+                .next_back()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+        {
+            collapse_ascii_ws(without_hashes.trim_end())
+        } else {
+            collapse_ascii_ws(trimmed)
+        }
+    } else {
+        collapse_ascii_ws(first)
+    };
+    (!text.is_empty()).then_some(text)
+}
+
+fn markdown_fence_symbol(content: &str) -> Option<String> {
+    let first = content.lines().find(|line| !line.trim().is_empty())?.trim();
+    let rest = first
+        .strip_prefix("```")
+        .or_else(|| first.strip_prefix("~~~"))?
+        .trim();
+    if rest.is_empty() {
+        return Some("fenced code".to_string());
+    }
+
+    let language = rest
+        .split_whitespace()
+        .next()
+        .unwrap_or(rest)
+        .trim_matches(['{', '}']);
+    if language.is_empty() {
+        Some("fenced code".to_string())
+    } else {
+        Some(format!("fenced code: {language}"))
+    }
 }
 
 fn collapse_ascii_ws(input: &str) -> String {
@@ -1316,6 +1382,107 @@ class Handler {
             .unwrap();
         assert_eq!(mixin.kind, ChunkKind::Module);
         assert!(mixin.doc_comment.contains("Card theme helpers."));
+    }
+
+    // ── Markdown / MDX ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_markdown_heading_sections_and_fenced_code_chunks() {
+        assert_eq!(Language::from_extension("md"), Some(Language::Markdown));
+        assert_eq!(
+            Language::from_extension("markdown"),
+            Some(Language::Markdown)
+        );
+
+        let src = r#"
+# Pluck Docs
+
+Use pluck before raw file reads.
+
+```rust
+fn main() {
+    println!("fast");
+}
+```
+
+Install
+-------
+
+Run the MCP server from your agent.
+"#;
+        let result = chunk_source_with_meta(src, Language::Markdown).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"Pluck Docs"),
+            "missing ATX heading section: {result:?}"
+        );
+        assert!(
+            names.contains(&"Install"),
+            "missing setext heading section: {result:?}"
+        );
+        assert!(
+            names.contains(&"fenced code: rust"),
+            "missing fenced code chunk: {result:?}"
+        );
+
+        let fence = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "fenced code: rust")
+            .unwrap();
+        assert_eq!(fence.kind, ChunkKind::Module);
+        assert_eq!(fence.signature, "```rust");
+        assert!(fence.content.contains("println!"));
+    }
+
+    #[test]
+    fn test_mdx_heading_sections_and_fenced_code_chunks() {
+        assert_eq!(Language::from_extension("mdx"), Some(Language::Mdx));
+
+        let src = r#"
+---
+title: Dashboard
+---
+
+import Widget from "./Widget"
+
+# Dashboard MDX
+
+<Widget status="ok" />
+
+~~~tsx
+<Widget status="ok" />
+~~~
+
+## Props
+
+<PropTable />
+"#;
+        let result = chunk_source_with_meta(src, Language::Mdx).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"Dashboard MDX"),
+            "missing MDX top heading: {result:?}"
+        );
+        assert!(
+            names.contains(&"Props"),
+            "missing MDX nested heading: {result:?}"
+        );
+        assert!(
+            names.contains(&"fenced code: tsx"),
+            "missing MDX fenced code chunk: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_markdown_heading_keeps_hash_in_title() {
+        let src = "# C# notes\n\nUse the parser safely.\n";
+        let chunks = chunk_source(src, Language::Markdown).unwrap();
+        assert_eq!(chunks[0].symbol, "C# notes");
     }
 
     #[test]

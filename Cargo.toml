@@ -27,6 +27,7 @@ tree-sitter-java = "0.23"
 tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-scss = "1.0"
+tree-sitter-md-025 = "0.5.6"
 
 # Search / index
 tantivy = "0.26"

@@ -21,6 +21,7 @@ tree-sitter-java.workspace = true
 tree-sitter-html.workspace = true
 tree-sitter-css.workspace = true
 tree-sitter-scss.workspace = true
+tree-sitter-md-025.workspace = true
 tantivy.workspace = true
 rusqlite.workspace = true
 notify.workspace = true

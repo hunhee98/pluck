@@ -14,6 +14,8 @@ pub enum Lang {
     Html,
     Css,
     Scss,
+    Markdown,
+    Mdx,
 }
 
 impl Lang {
@@ -29,6 +31,8 @@ impl Lang {
             "html" | "htm" => Some(Self::Html),
             "css" => Some(Self::Css),
             "scss" => Some(Self::Scss),
+            "md" | "markdown" => Some(Self::Markdown),
+            "mdx" => Some(Self::Mdx),
             _ => None,
         }
     }
@@ -45,6 +49,7 @@ impl Lang {
             Self::Html => tree_sitter_html::LANGUAGE.into(),
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Scss => tree_sitter_scss::language(),
+            Self::Markdown | Self::Mdx => tree_sitter_md_025::LANGUAGE.into(),
         }
     }
 
@@ -60,6 +65,7 @@ impl Lang {
             Self::Html => include_str!("queries/html.scm"),
             Self::Css => include_str!("queries/css.scm"),
             Self::Scss => include_str!("queries/scss.scm"),
+            Self::Markdown | Self::Mdx => include_str!("queries/markdown.scm"),
         }
     }
 
@@ -77,6 +83,7 @@ impl Lang {
             Self::Html => include_str!("queries/callees/html.scm"),
             Self::Css => include_str!("queries/callees/css.scm"),
             Self::Scss => include_str!("queries/callees/scss.scm"),
+            Self::Markdown | Self::Mdx => include_str!("queries/callees/markdown.scm"),
         }
     }
 
@@ -96,6 +103,7 @@ impl Lang {
             Self::Html => include_str!("queries/imports/html.scm"),
             Self::Css => include_str!("queries/imports/css.scm"),
             Self::Scss => include_str!("queries/imports/scss.scm"),
+            Self::Markdown | Self::Mdx => include_str!("queries/imports/markdown.scm"),
         }
     }
 
@@ -155,6 +163,14 @@ impl Lang {
             Self::Scss => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Scss)).as_ref()
+            }
+            Self::Markdown => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Markdown)).as_ref()
+            }
+            Self::Mdx => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Mdx)).as_ref()
             }
         }
     }

@@ -14,6 +14,7 @@ Versioning follows [SemVer](https://semver.org).
   script/style sections.
 - CSS / SCSS chunker support for selector rules, nested SCSS selectors, and
   at-rule blocks such as `@media`, `@keyframes`, `@mixin`, and `@function`.
+- Markdown / MDX chunker support for heading sections and fenced code blocks.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.
