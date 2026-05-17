@@ -10,6 +10,7 @@ pub enum Lang {
     Python,
     Go,
     Java,
+    Html,
 }
 
 impl Lang {
@@ -21,6 +22,7 @@ impl Lang {
             "py" | "pyi" => Some(Self::Python),
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
+            "html" | "htm" => Some(Self::Html),
             _ => None,
         }
     }
@@ -33,6 +35,7 @@ impl Lang {
             Self::Python => tree_sitter_python::LANGUAGE.into(),
             Self::Go => tree_sitter_go::LANGUAGE.into(),
             Self::Java => tree_sitter_java::LANGUAGE.into(),
+            Self::Html => tree_sitter_html::LANGUAGE.into(),
         }
     }
 
@@ -44,6 +47,7 @@ impl Lang {
             Self::Python => include_str!("queries/python.scm"),
             Self::Go => include_str!("queries/go.scm"),
             Self::Java => include_str!("queries/java.scm"),
+            Self::Html => include_str!("queries/html.scm"),
         }
     }
 
@@ -57,6 +61,7 @@ impl Lang {
             Self::Python => include_str!("queries/callees/python.scm"),
             Self::Go => include_str!("queries/callees/go.scm"),
             Self::Java => include_str!("queries/callees/java.scm"),
+            Self::Html => include_str!("queries/callees/html.scm"),
         }
     }
 
@@ -72,6 +77,7 @@ impl Lang {
             Self::Python => include_str!("queries/imports/python.scm"),
             Self::Go => include_str!("queries/imports/go.scm"),
             Self::Java => include_str!("queries/imports/java.scm"),
+            Self::Html => include_str!("queries/imports/html.scm"),
         }
     }
 
@@ -115,6 +121,10 @@ impl Lang {
             Self::Java => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Java)).as_ref()
+            }
+            Self::Html => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Html)).as_ref()
             }
         }
     }

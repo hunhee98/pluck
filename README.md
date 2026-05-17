@@ -212,8 +212,8 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 - **v0.3.0 — shipped**: Natural-language recall — 100-query suite across
   tokio / django / next.js, query expansion, two-stage cascade, continuous
   hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
-- **v0.4.0 — next**: Java + repo-format coverage — HTML, CSS/SCSS,
-  Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell.
+- **v0.4.0 — next**: Java + repo-format coverage — Java and HTML landed;
+  CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell remain.
 - **v0.5.0**: Systems + JVM tier — C, C++, Kotlin, SQL, Terraform/HCL.
 - **v0.6.0**: App-framework tier — Ruby, PHP, Swift, Vue, Svelte, Astro,
   OpenAPI / GraphQL.

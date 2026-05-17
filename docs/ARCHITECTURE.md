@@ -100,6 +100,7 @@ The agent already has the content in its context, so this is pure token win.
 | Python | `tree-sitter-python` | `pallets/flask` |
 | Go | `tree-sitter-go` | `gin-gonic/gin` |
 | Java | `tree-sitter-java` | real-world fixtures pending |
+| HTML | `tree-sitter-html` | semantic/component fixtures |
 
 More languages added behind the same chunker interface.
 
