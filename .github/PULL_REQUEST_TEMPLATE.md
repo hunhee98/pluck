@@ -20,11 +20,17 @@ Target version:
 
 - `v0.__.__`
 
+Patch backport:
+
+- [ ] Not needed.
+- [ ] Needed for `release/v0.__.x` because this fixes shipped behavior.
+
 Version work:
 
 - [ ] CHANGELOG updated under `[Unreleased]`, or not needed because:
 - [ ] ROADMAP updated if this changes user-visible behavior.
-- [ ] Cargo version bump included only if this is a release/train bump PR.
+- [ ] Cargo version bump included only if this is a release, patch, or train
+      bump PR.
 
 ## Test plan
 

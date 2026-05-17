@@ -74,6 +74,11 @@ maintenance branch (for example `release/v0.3.x`) and cherry-pick it there.
 Once new minor features have landed on `main`, that same fix ships with the
 next minor unless it is backported.
 
+Use `python3 scripts/bump-version.py patch` for patch release branches and
+`python3 scripts/bump-version.py minor` when `main` starts the next minor train.
+The script updates the workspace version, internal dependency pins, and
+`Cargo.lock` together.
+
 ## Engine-core changes — the regression gate
 
 If your PR touches anything under
@@ -143,6 +148,7 @@ If you edit anything under `docs/mcp-descriptions/`:
 - [ ] New MCP tool? Description carries `WHEN / WHY / FALLBACK` sections.
 - [ ] User-facing perf claim? Cited row in `benchmarks/baseline.json`.
 - [ ] Version lane selected in the PR body.
+- [ ] Patch backport decision selected in the PR body.
 - [ ] ROADMAP updated if the PR changes user-visible behavior.
 - [ ] CHANGELOG entry under `[Unreleased]`.
 

@@ -17,7 +17,8 @@
 #
 # crates.io requires path deps to also carry a `version =` entry, which
 # the crate manifests already declare. If you bump the workspace
-# version, every internal dep entry must be bumped in lock-step.
+# version, use `scripts/bump-version.py patch`, `minor`, or an exact
+# version so every internal dep entry and Cargo.lock move in lock-step.
 
 set -euo pipefail
 

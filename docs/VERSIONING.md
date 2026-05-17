@@ -24,13 +24,49 @@ next minor train even if the implementation is small.
 
 - Latest shipped release: `v0.3.0`.
 - `main` is now the `v0.4.0` train.
-- Bug fixes that must ship without the v0.4.0 feature set should be
-  cherry-picked to a `release/v0.3.x` branch and released as `v0.3.y`.
+- Patch releases are first-class. Bug fixes that must ship without the
+  v0.4.0 feature set should be cherry-picked to a `release/v0.3.x` branch
+  and released as `v0.3.y`.
 
 That distinction matters. A TSX parser bug fix on `main` belongs to
 `v0.4.0` after Java/HTML support has landed there. The same fix can be a
 `v0.3.1` patch only if it is cherry-picked onto a patch-only maintenance
 branch.
+
+## Patch releases
+
+Patch releases are for already-shipped behavior. They should not wait for
+the next minor train when users on the published version need the fix.
+
+Use a patch release when all of these are true:
+
+- The change fixes a bug, security issue, CI/release breakage, or shipped-doc
+  mistake.
+- The fix is safe to ship without new minor-train features.
+- Users of the latest published release would benefit immediately.
+
+Cut patches from the released line, not from a `main` branch that already
+contains new minor features:
+
+```bash
+git fetch --tags origin
+git checkout -b release/v0.3.x v0.3.0
+git cherry-pick <fix-commit>
+python3 scripts/bump-version.py patch
+```
+
+Then move the patch notes into `## [0.3.1] - YYYY-MM-DD`, verify, tag, and
+push:
+
+```bash
+python3 scripts/version-check.py --tag v0.3.1
+scripts/release.sh
+git tag v0.3.1
+git push origin release/v0.3.x v0.3.1
+```
+
+After `v0.4.0` ships, the same pattern becomes `release/v0.4.x` and
+`v0.4.1`, `v0.4.2`, and so on.
 
 ## PR loop
 
@@ -56,6 +92,8 @@ Release PRs do the mechanical version work in one place:
 - Update the `[Unreleased]` compare link to start from the new tag.
 - Verify `Cargo.toml`, internal dependency versions, and `Cargo.lock` all
   agree.
+- Use `python3 scripts/bump-version.py patch`, `minor`, or an exact version
+  instead of editing version strings by hand.
 - Run `python3 scripts/version-check.py --tag vx.y.z`.
 - Run `scripts/release.sh` for a dry run before pushing the tag.
 
