@@ -607,11 +607,8 @@ impl PluckServer {
         // proposition is "10x cheaper than pluck.symbol when you only need
         // the interface".
         let h = &hits[0];
-        let lang = std::path::Path::new(&h.path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .and_then(Language::from_extension)
-            .unwrap_or(Language::TypeScript);
+        let lang =
+            Language::from_path(std::path::Path::new(&h.path)).unwrap_or(Language::TypeScript);
         let callees = extract_callees(&h.content, lang);
 
         let mut out = format!(
@@ -1042,11 +1039,7 @@ fn callees_of(hit: &SearchHit) -> Vec<String> {
 }
 
 fn lang_for_path(path: &str) -> Language {
-    std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .and_then(Language::from_extension)
-        .unwrap_or(Language::TypeScript)
+    Language::from_path(std::path::Path::new(path)).unwrap_or(Language::TypeScript)
 }
 
 /// `db.user.findOne` → `findOne` ; `Logger::new` → `new` ; bare names pass through.

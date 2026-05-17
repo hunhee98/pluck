@@ -19,6 +19,7 @@ pub enum Lang {
     Yaml,
     Toml,
     Dockerfile,
+    Shell,
 }
 
 impl Lang {
@@ -36,6 +37,10 @@ impl Lang {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext.eq_ignore_ascii_case("dockerfile") {
             return Some(Self::Dockerfile);
+        }
+
+        if is_shell_filename(&lower_name) {
+            return Some(Self::Shell);
         }
         Self::from_extension(ext)
     }
@@ -58,6 +63,7 @@ impl Lang {
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
             "dockerfile" => Some(Self::Dockerfile),
+            "sh" | "bash" | "zsh" | "ksh" | "bats" => Some(Self::Shell),
             _ => None,
         }
     }
@@ -75,7 +81,7 @@ impl Lang {
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Scss => tree_sitter_scss::language(),
             Self::Markdown | Self::Mdx => tree_sitter_md_025::LANGUAGE.into(),
-            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => {
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => {
                 unreachable!("custom formats do not use tree-sitter")
             }
         }
@@ -94,7 +100,7 @@ impl Lang {
             Self::Css => include_str!("queries/css.scm"),
             Self::Scss => include_str!("queries/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
 
@@ -113,7 +119,7 @@ impl Lang {
             Self::Css => include_str!("queries/callees/css.scm"),
             Self::Scss => include_str!("queries/callees/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/callees/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
 
@@ -134,7 +140,7 @@ impl Lang {
             Self::Css => include_str!("queries/imports/css.scm"),
             Self::Scss => include_str!("queries/imports/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/imports/markdown.scm"),
-            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => "",
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
 
@@ -210,7 +216,25 @@ impl Lang {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Mdx)).as_ref()
             }
-            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile => None,
+            Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => None,
         }
     }
+}
+
+fn is_shell_filename(name: &str) -> bool {
+    matches!(
+        name,
+        ".bashrc"
+            | ".bash_profile"
+            | ".bash_login"
+            | ".profile"
+            | "profile"
+            | ".zshrc"
+            | ".zprofile"
+            | ".zshenv"
+            | ".zlogin"
+            | ".kshrc"
+            | ".envrc"
+            | "pkgbuild"
+    )
 }
