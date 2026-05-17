@@ -191,13 +191,14 @@ fn cmd_index(path: Option<PathBuf>) -> Result<()> {
     let stats: IndexStats = index_repo(&idx, &repo)?;
     let elapsed = t0.elapsed();
     eprintln!(
-        "indexed {} files ({} chunks) in {:.2}s — skipped: {} lang, {} size, {} unreadable",
+        "indexed {} files ({} chunks) in {:.2}s — skipped: {} lang, {} size, {} unreadable; parse errors: {}",
         stats.files_indexed,
         stats.chunks_indexed,
         elapsed.as_secs_f64(),
         stats.files_skipped_lang,
         stats.files_skipped_size,
         stats.files_skipped_read,
+        stats.files_parse_errors,
     );
     eprintln!("index → {}", dir.display());
     Ok(())
