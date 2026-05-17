@@ -7,12 +7,13 @@
 #
 # What it does:
 #   1. Fails fast if the working tree is dirty.
-#   2. Runs the full workspace test suite.
-#   3. Dry-run mode verifies pluck-core with `cargo publish --dry-run`
+#   2. Checks version metadata.
+#   3. Runs the full workspace test suite.
+#   4. Dry-run mode verifies pluck-core with `cargo publish --dry-run`
 #      and package-lists dependent crates. Live mode publishes each
 #      publishable crate in dependency order:
 #      pluck-core → pluck-mcp → pluck-cli.
-#   4. pluck-bench is `publish = false` and stays local.
+#   5. pluck-bench is `publish = false` and stays local.
 #
 # crates.io requires path deps to also carry a `version =` entry, which
 # the crate manifests already declare. If you bump the workspace
@@ -31,6 +32,14 @@ echo "==> sanity: working tree clean?"
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "    working tree is dirty — commit or stash first." >&2
   exit 1
+fi
+
+VERSION="$(python3 scripts/version-check.py --print-version)"
+echo "==> sanity: version metadata"
+if [ "$DRY_RUN" = true ]; then
+  python3 scripts/version-check.py --allow-unreleased
+else
+  python3 scripts/version-check.py --tag "v${VERSION}"
 fi
 
 echo "==> running tests"

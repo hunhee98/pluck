@@ -57,6 +57,23 @@ session_dedup savings: 44% → 47%.
 
 One change per commit. No bundled "while I'm at it" refactors.
 
+## Version impact
+
+Every PR must choose a release lane before it merges. See
+[`docs/VERSIONING.md`](docs/VERSIONING.md) for the full policy.
+
+- `patch` — bug fixes, security updates, CI/release repairs, and docs that
+  clarify already-shipped behavior.
+- `minor-train` — new languages, formats, tools, integrations, ranking
+  behavior, storage layers, benchmark surfaces, or install/adoption behavior.
+- `release-now` — the PR that cuts a GitHub/crates.io release.
+- `no-release` — internal-only or test-only work with no user-visible behavior.
+
+If a bug fix must ship before the next minor train, create a patch-only
+maintenance branch (for example `release/v0.3.x`) and cherry-pick it there.
+Once new minor features have landed on `main`, that same fix ships with the
+next minor unless it is backported.
+
 ## Engine-core changes — the regression gate
 
 If your PR touches anything under
@@ -125,6 +142,8 @@ If you edit anything under `docs/mcp-descriptions/`:
       pasted into the PR body.
 - [ ] New MCP tool? Description carries `WHEN / WHY / FALLBACK` sections.
 - [ ] User-facing perf claim? Cited row in `benchmarks/baseline.json`.
+- [ ] Version lane selected in the PR body.
+- [ ] ROADMAP updated if the PR changes user-visible behavior.
 - [ ] CHANGELOG entry under `[Unreleased]`.
 
 ## Filing issues
