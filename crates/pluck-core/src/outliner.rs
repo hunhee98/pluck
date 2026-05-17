@@ -53,8 +53,7 @@ pub struct OutlineEntry {
 pub fn outline_file(path: &Path) -> Result<Outline> {
     let src = std::fs::read_to_string(path)?;
     let path_str = path.to_string_lossy().into_owned();
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Language::from_extension(ext);
+    let lang = Language::from_path(path);
     Ok(outline_source(&src, lang, &path_str))
 }
 

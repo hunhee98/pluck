@@ -217,8 +217,8 @@ Maintainer release flow lives in
   tokio / django / next.js, query expansion, two-stage cascade, continuous
   hybrid weighting, NDCG@10 measurement, and symbol/path component ranking.
 - **v0.4.0 — active train**: Java + repo-format coverage — Java, HTML,
-  prompt-first agent install, TSX grammar fixes, CSS/SCSS, Markdown/MDX, and
-  YAML/JSON/TOML landed; Dockerfile and Shell remain.
+  prompt-first agent install, TSX grammar fixes, CSS/SCSS, Markdown/MDX,
+  YAML/JSON/TOML, and Dockerfile landed; Shell remains.
 - **v0.5.0**: Systems + JVM tier — C, C++, Kotlin, SQL, Terraform/HCL.
 - **v0.6.0**: App-framework tier — Ruby, PHP, Swift, Vue, Svelte, Astro,
   OpenAPI / GraphQL.

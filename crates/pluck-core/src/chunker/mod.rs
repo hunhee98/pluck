@@ -1,4 +1,5 @@
 mod config;
+mod dockerfile;
 mod lang;
 mod types;
 
@@ -21,9 +22,7 @@ pub struct ChunkResult {
 }
 
 pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang =
-        Language::from_extension(ext).with_context(|| format!("unsupported extension: {ext:?}"))?;
+    let lang = Language::from_path(path).with_context(|| format!("unsupported path: {path:?}"))?;
     let src = std::fs::read_to_string(path).with_context(|| format!("failed to read {path:?}"))?;
     chunk_source_with_meta_for_path(&src, lang, path).map(|r| r.chunks)
 }
@@ -52,6 +51,9 @@ fn chunk_source_with_meta_labeled(
 ) -> Result<ChunkResult> {
     if lang.is_config_format() {
         return Ok(config::chunk_config_source(src, lang));
+    }
+    if lang == Language::Dockerfile {
+        return Ok(dockerfile::chunk_dockerfile_source(src));
     }
 
     let Some(query) = lang.compiled_query() else {
@@ -358,7 +360,8 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Mdx
         | Language::Json
         | Language::Yaml
-        | Language::Toml => None,
+        | Language::Toml
+        | Language::Dockerfile => None,
     }
 }
 
@@ -1621,6 +1624,86 @@ path = "src/main.rs"
             .find(|c| c.symbol == "workspace.dependencies")
             .unwrap();
         assert!(deps.content.contains("serde"));
+    }
+
+    // ── Dockerfile ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_dockerfile_stages_instructions_and_install_blocks() {
+        assert_eq!(
+            Language::from_path(std::path::Path::new("Dockerfile")),
+            Some(Language::Dockerfile)
+        );
+        assert_eq!(
+            Language::from_path(std::path::Path::new("docker/app.Dockerfile")),
+            Some(Language::Dockerfile)
+        );
+        assert_eq!(
+            Language::from_path(std::path::Path::new("Containerfile.prod")),
+            Some(Language::Dockerfile)
+        );
+
+        let src = r#"
+# syntax=docker/dockerfile:1.7
+FROM rust:1.78 AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+RUN apt-get update && apt-get install -y pkg-config \
+    libssl-dev && cargo fetch
+COPY . .
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN <<EOF
+apt-get update
+apt-get install -y ca-certificates
+EOF
+COPY --from=builder /app/target/release/pluck /usr/local/bin/pluck
+ENTRYPOINT ["pluck"]
+"#;
+        let result = chunk_source_with_meta(src, Language::Dockerfile).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"stage: builder"),
+            "missing named stage: {result:?}"
+        );
+        assert!(
+            names.contains(&"stage 2: debian:bookworm-slim"),
+            "missing final image stage: {result:?}"
+        );
+        assert!(
+            names.contains(&"deps: Cargo.toml Cargo.lock ./"),
+            "missing dependency manifest copy: {result:?}"
+        );
+        assert!(
+            names.contains(&"install: apt-get install"),
+            "missing apt install block: {result:?}"
+        );
+        assert!(
+            names.contains(&"RUN cargo build --release"),
+            "missing generic RUN instruction: {result:?}"
+        );
+
+        let install = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "install: apt-get install")
+            .unwrap();
+        assert!(install.content.contains("libssl-dev"));
+        assert!(install.content.contains("cargo fetch"));
+
+        let heredoc = result
+            .chunks
+            .iter()
+            .find(|c| {
+                c.symbol == "install: apt-get install"
+                    && c.content.contains("apt-get install -y ca-certificates")
+            })
+            .unwrap();
+        assert_eq!(heredoc.symbol, "install: apt-get install");
+        assert!(heredoc.content.contains("EOF"));
     }
 
     #[test]

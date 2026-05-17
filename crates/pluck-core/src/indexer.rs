@@ -64,8 +64,7 @@ pub fn index_repo_into(
 
         let path = entry.path();
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let Some(lang) = Language::from_extension(ext) else {
+        let Some(lang) = Language::from_path(path) else {
             stats.files_skipped_lang += 1;
             continue;
         };
@@ -131,15 +130,12 @@ pub fn index_files_in_memory(
     for (path, src) in files {
         stats.files_seen += 1;
         let path_str = path.as_ref();
-        let ext = std::path::Path::new(path_str)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        let Some(lang) = Language::from_extension(ext) else {
+        let path = std::path::Path::new(path_str);
+        let Some(lang) = Language::from_path(path) else {
             stats.files_skipped_lang += 1;
             continue;
         };
-        let meta = chunk_source_with_meta_for_path(src.as_ref(), lang, Path::new(path_str))?;
+        let meta = chunk_source_with_meta_for_path(src.as_ref(), lang, path)?;
         if meta.parse_errors {
             stats.files_parse_errors += 1;
         }
@@ -191,8 +187,7 @@ pub fn reindex_paths(
             continue;
         }
 
-        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let Some(lang) = Language::from_extension(ext) else {
+        let Some(lang) = Language::from_path(&abs) else {
             stats.files_skipped_lang += 1;
             continue;
         };
@@ -268,13 +263,17 @@ mod tests {
                 "user.ts".to_string(),
                 "class User { greet() {} logout() {} }\n".to_string(),
             ),
+            (
+                "Dockerfile".to_string(),
+                "FROM rust:1.78 AS builder\nRUN cargo fetch\n".to_string(),
+            ),
             ("skip.unknown".to_string(), "ignored".to_string()),
         ];
         let stats = index_files_in_memory(&idx, &files).unwrap();
-        assert_eq!(stats.files_seen, 3);
-        assert_eq!(stats.files_indexed, 2);
+        assert_eq!(stats.files_seen, 4);
+        assert_eq!(stats.files_indexed, 3);
         assert_eq!(stats.files_skipped_lang, 1);
-        assert!(stats.chunks_indexed >= 4); // login, User, greet, logout
+        assert!(stats.chunks_indexed >= 6); // login, User, greet, logout, Dockerfile chunks
     }
 
     #[test]
