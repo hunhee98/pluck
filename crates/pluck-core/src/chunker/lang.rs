@@ -12,6 +12,8 @@ pub enum Lang {
     Go,
     Java,
     Html,
+    Css,
+    Scss,
 }
 
 impl Lang {
@@ -25,6 +27,8 @@ impl Lang {
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
             "html" | "htm" => Some(Self::Html),
+            "css" => Some(Self::Css),
+            "scss" => Some(Self::Scss),
             _ => None,
         }
     }
@@ -39,6 +43,8 @@ impl Lang {
             Self::Go => tree_sitter_go::LANGUAGE.into(),
             Self::Java => tree_sitter_java::LANGUAGE.into(),
             Self::Html => tree_sitter_html::LANGUAGE.into(),
+            Self::Css => tree_sitter_css::LANGUAGE.into(),
+            Self::Scss => tree_sitter_scss::language(),
         }
     }
 
@@ -52,6 +58,8 @@ impl Lang {
             Self::Go => include_str!("queries/go.scm"),
             Self::Java => include_str!("queries/java.scm"),
             Self::Html => include_str!("queries/html.scm"),
+            Self::Css => include_str!("queries/css.scm"),
+            Self::Scss => include_str!("queries/scss.scm"),
         }
     }
 
@@ -67,6 +75,8 @@ impl Lang {
             Self::Go => include_str!("queries/callees/go.scm"),
             Self::Java => include_str!("queries/callees/java.scm"),
             Self::Html => include_str!("queries/callees/html.scm"),
+            Self::Css => include_str!("queries/callees/css.scm"),
+            Self::Scss => include_str!("queries/callees/scss.scm"),
         }
     }
 
@@ -84,6 +94,8 @@ impl Lang {
             Self::Go => include_str!("queries/imports/go.scm"),
             Self::Java => include_str!("queries/imports/java.scm"),
             Self::Html => include_str!("queries/imports/html.scm"),
+            Self::Css => include_str!("queries/imports/css.scm"),
+            Self::Scss => include_str!("queries/imports/scss.scm"),
         }
     }
 
@@ -135,6 +147,14 @@ impl Lang {
             Self::Html => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Html)).as_ref()
+            }
+            Self::Css => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Css)).as_ref()
+            }
+            Self::Scss => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Scss)).as_ref()
             }
         }
     }

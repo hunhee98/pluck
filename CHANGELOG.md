@@ -12,6 +12,8 @@ Versioning follows [SemVer](https://semver.org).
   enums, methods, constructors, imports, and direct callees.
 - HTML chunker support for semantic elements, component-like blocks, and
   script/style sections.
+- CSS / SCSS chunker support for selector rules, nested SCSS selectors, and
+  at-rule blocks such as `@media`, `@keyframes`, `@mixin`, and `@function`.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.

@@ -152,7 +152,7 @@ released as `0.4.0`, not `0.3.1`.
       sections.
 - [x] TSX parser correctness: `.tsx` uses the TSX grammar, parse warnings name
       the path, and index summaries count parse-error files.
-- [ ] CSS / SCSS chunker: selector and at-rule chunks.
+- [x] CSS / SCSS chunker: selector and at-rule chunks.
 - [ ] Markdown / MDX chunker: heading sections and fenced code blocks.
 - [ ] YAML / JSON / TOML chunker: path/key chunks for config-heavy repos.
 - [ ] Dockerfile chunker: stages, instructions, and dependency/install blocks.
