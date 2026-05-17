@@ -18,6 +18,8 @@ Versioning follows [SemVer](https://semver.org).
 - Version-management guide and release metadata check. PRs now declare their
   release lane, and tag releases fail if Cargo versions, internal dependency
   versions, Cargo.lock, and CHANGELOG are out of sync.
+- Patch release lane and `scripts/bump-version.py`, so `v0.x.y` maintenance
+  releases are a first-class path instead of an ad hoc manual edit.
 
 ### Changed
 
