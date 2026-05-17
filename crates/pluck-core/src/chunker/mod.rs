@@ -16,6 +16,7 @@ use tree_sitter::{Parser, QueryCursor, StreamingIterator};
 pub struct ChunkResult {
     pub chunks: Vec<Chunk>,
     pub imports: Vec<String>,
+    pub parse_errors: bool,
 }
 
 pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
@@ -23,7 +24,7 @@ pub fn chunk_file(path: &Path) -> Result<Vec<Chunk>> {
     let lang =
         Language::from_extension(ext).with_context(|| format!("unsupported extension: {ext:?}"))?;
     let src = std::fs::read_to_string(path).with_context(|| format!("failed to read {path:?}"))?;
-    chunk_source(&src, lang)
+    chunk_source_with_meta_for_path(&src, lang, path).map(|r| r.chunks)
 }
 
 pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
@@ -31,6 +32,23 @@ pub fn chunk_source(src: &str, lang: Language) -> Result<Vec<Chunk>> {
 }
 
 pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> {
+    chunk_source_with_meta_labeled(src, lang, None)
+}
+
+pub fn chunk_source_with_meta_for_path(
+    src: &str,
+    lang: Language,
+    path: &Path,
+) -> Result<ChunkResult> {
+    let label = path.to_string_lossy();
+    chunk_source_with_meta_labeled(src, lang, Some(label.as_ref()))
+}
+
+fn chunk_source_with_meta_labeled(
+    src: &str,
+    lang: Language,
+    source_path: Option<&str>,
+) -> Result<ChunkResult> {
     let Some(query) = lang.compiled_query() else {
         return Ok(ChunkResult::default());
     };
@@ -42,8 +60,16 @@ pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> 
 
     let tree = parser.parse(src, None).context("parse failed")?;
 
-    if tree.root_node().has_error() {
-        tracing::warn!("parse tree contains errors; extracting available chunks");
+    let parse_errors = tree.root_node().has_error();
+    if parse_errors {
+        if let Some(path) = source_path {
+            tracing::warn!(
+                path,
+                "parse tree contains errors; extracting available chunks"
+            );
+        } else {
+            tracing::warn!("parse tree contains errors; extracting available chunks");
+        }
     }
 
     let capture_names = query.capture_names();
@@ -196,7 +222,11 @@ pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> 
         })
         .collect();
 
-    Ok(ChunkResult { chunks, imports })
+    Ok(ChunkResult {
+        chunks,
+        imports,
+        parse_errors,
+    })
 }
 
 fn leading_doc_comment(lines: &[&str], lang: Language, start_row: usize, content: &str) -> String {
@@ -303,9 +333,11 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("///")
             .or_else(|| line.strip_prefix("//!"))
             .map(|s| s.trim().to_string()),
-        Language::TypeScript | Language::JavaScript | Language::Go | Language::Java => {
-            line.strip_prefix("//").map(|s| s.trim().to_string())
-        }
+        Language::TypeScript
+        | Language::Tsx
+        | Language::JavaScript
+        | Language::Go
+        | Language::Java => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Html => line
             .strip_prefix("<!--")
@@ -656,6 +688,37 @@ interface UserRepository {
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].symbol, "UserRepository");
         assert_eq!(chunks[0].kind, ChunkKind::Class);
+    }
+
+    #[test]
+    fn test_tsx_uses_tsx_grammar_for_jsx_components() {
+        let src = r#"
+import React from "react";
+
+export function Component({ label }: { label: string }) {
+  return <div className="card">{label}</div>;
+}
+"#;
+        assert_eq!(Language::from_extension("ts"), Some(Language::TypeScript));
+        assert_eq!(Language::from_extension("tsx"), Some(Language::Tsx));
+
+        let mut parser = tree_sitter::Parser::new();
+        let tsx = Language::Tsx.ts_language();
+        parser.set_language(&tsx).unwrap();
+        let tree = parser.parse(src, None).unwrap();
+        assert!(
+            !tree.root_node().has_error(),
+            "TSX grammar should parse JSX without syntax errors"
+        );
+
+        let result = chunk_source_with_meta(src, Language::Tsx).unwrap();
+        assert!(!result.parse_errors);
+        assert!(result.imports.contains(&"react".to_string()));
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"Component"),
+            "missing Component: {result:?}"
+        );
     }
 
     #[test]

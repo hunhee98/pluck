@@ -5,6 +5,7 @@ use tree_sitter::{Language, Query};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
     TypeScript,
+    Tsx,
     JavaScript,
     Rust,
     Python,
@@ -16,7 +17,8 @@ pub enum Lang {
 impl Lang {
     pub fn from_extension(ext: &str) -> Option<Self> {
         match ext {
-            "ts" | "tsx" => Some(Self::TypeScript),
+            "ts" => Some(Self::TypeScript),
+            "tsx" => Some(Self::Tsx),
             "js" | "jsx" | "mjs" | "cjs" => Some(Self::JavaScript),
             "rs" => Some(Self::Rust),
             "py" | "pyi" => Some(Self::Python),
@@ -30,6 +32,7 @@ impl Lang {
     pub fn ts_language(self) -> Language {
         match self {
             Self::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            Self::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
             Self::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
             Self::Rust => tree_sitter_rust::LANGUAGE.into(),
             Self::Python => tree_sitter_python::LANGUAGE.into(),
@@ -42,6 +45,7 @@ impl Lang {
     pub fn query_str(self) -> &'static str {
         match self {
             Self::TypeScript => include_str!("queries/typescript.scm"),
+            Self::Tsx => include_str!("queries/typescript.scm"),
             Self::JavaScript => include_str!("queries/javascript.scm"),
             Self::Rust => include_str!("queries/rust.scm"),
             Self::Python => include_str!("queries/python.scm"),
@@ -56,6 +60,7 @@ impl Lang {
     pub fn callee_query_str(self) -> &'static str {
         match self {
             Self::TypeScript => include_str!("queries/callees/typescript.scm"),
+            Self::Tsx => include_str!("queries/callees/typescript.scm"),
             Self::JavaScript => include_str!("queries/callees/javascript.scm"),
             Self::Rust => include_str!("queries/callees/rust.scm"),
             Self::Python => include_str!("queries/callees/python.scm"),
@@ -72,6 +77,7 @@ impl Lang {
     pub fn import_query_str(self) -> &'static str {
         match self {
             Self::TypeScript => include_str!("queries/imports/typescript.scm"),
+            Self::Tsx => include_str!("queries/imports/typescript.scm"),
             Self::JavaScript => include_str!("queries/imports/javascript.scm"),
             Self::Rust => include_str!("queries/imports/rust.scm"),
             Self::Python => include_str!("queries/imports/python.scm"),
@@ -101,6 +107,10 @@ impl Lang {
             Self::TypeScript => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::TypeScript)).as_ref()
+            }
+            Self::Tsx => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Tsx)).as_ref()
             }
             Self::JavaScript => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();

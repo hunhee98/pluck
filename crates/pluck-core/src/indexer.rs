@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 
-use crate::chunker::{chunk_source_with_meta, Language};
+use crate::chunker::{chunk_source_with_meta_for_path, Language};
 use crate::index::PluckIndex;
 
 /// Files larger than this are skipped — they're usually generated assets,
@@ -22,6 +22,7 @@ pub struct IndexStats {
     pub files_skipped_size: usize,
     pub files_skipped_lang: usize,
     pub files_skipped_read: usize,
+    pub files_parse_errors: usize,
     pub chunks_indexed: usize,
 }
 
@@ -89,7 +90,12 @@ pub fn index_repo_into(
             }
         };
 
-        let meta = match chunk_source_with_meta(&src, lang) {
+        let rel = path
+            .strip_prefix(repo_root)
+            .unwrap_or(path)
+            .to_string_lossy();
+
+        let meta = match chunk_source_with_meta_for_path(&src, lang, Path::new(rel.as_ref())) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("chunk failed for {}: {e}", path.display());
@@ -98,11 +104,9 @@ pub fn index_repo_into(
             }
         };
 
-        let rel = path
-            .strip_prefix(repo_root)
-            .unwrap_or(path)
-            .to_string_lossy();
-
+        if meta.parse_errors {
+            stats.files_parse_errors += 1;
+        }
         writer.add_imports(rel.as_ref(), meta.imports);
         for c in &meta.chunks {
             writer
@@ -135,7 +139,10 @@ pub fn index_files_in_memory(
             stats.files_skipped_lang += 1;
             continue;
         };
-        let meta = chunk_source_with_meta(src.as_ref(), lang)?;
+        let meta = chunk_source_with_meta_for_path(src.as_ref(), lang, Path::new(path_str))?;
+        if meta.parse_errors {
+            stats.files_parse_errors += 1;
+        }
         writer.add_imports(path_str, meta.imports);
         for c in &meta.chunks {
             writer.add_chunk(path_str, c)?;
@@ -210,7 +217,7 @@ pub fn reindex_paths(
             }
         };
 
-        let meta = match chunk_source_with_meta(&src, lang) {
+        let meta = match chunk_source_with_meta_for_path(&src, lang, Path::new(&rel)) {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("reindex chunk failed for {}: {e}", abs.display());
@@ -219,6 +226,9 @@ pub fn reindex_paths(
             }
         };
 
+        if meta.parse_errors {
+            stats.files_parse_errors += 1;
+        }
         writer.add_imports(&rel, meta.imports);
         for c in &meta.chunks {
             writer
@@ -265,6 +275,17 @@ mod tests {
         assert_eq!(stats.files_indexed, 2);
         assert_eq!(stats.files_skipped_lang, 1);
         assert!(stats.chunks_indexed >= 4); // login, User, greet, logout
+    }
+
+    #[test]
+    fn index_files_in_memory_counts_parse_errors() {
+        let idx = PluckIndex::in_ram().unwrap();
+        let files = vec![("broken.ts".to_string(), "function broken( {\n".to_string())];
+
+        let stats = index_files_in_memory(&idx, &files).unwrap();
+
+        assert_eq!(stats.files_indexed, 1);
+        assert_eq!(stats.files_parse_errors, 1);
     }
 
     #[test]

@@ -1399,13 +1399,16 @@ mod tests {
         let server = PluckServer::new(repo).expect("server new");
         let out = server
             .peek(Parameters(PeekParams {
-                name: "chunk_source_with_meta".into(),
+                name: "chunk_source_with_meta_labeled".into(),
             }))
             .await
             .expect("peek");
 
         // Signature line is present, no full body.
-        assert!(out.contains("pub fn chunk_source_with_meta"), "got: {out}");
+        assert!(
+            out.contains("fn chunk_source_with_meta_labeled"),
+            "got: {out}"
+        );
         assert!(out.contains("calls:"), "got: {out}");
         // peek must be dramatically smaller than pluck.symbol for the
         // same name — that's the entire reason peek exists.
@@ -1420,7 +1423,7 @@ mod tests {
         .unwrap();
         let symbol_out = server2
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source_with_meta".into(),
+                name: "chunk_source_with_meta_labeled".into(),
             }))
             .await
             .expect("symbol");
@@ -1504,13 +1507,13 @@ mod tests {
         let server = PluckServer::new(repo).expect("server new");
         let first = server
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source_with_meta".into(),
+                name: "chunk_source_with_meta_labeled".into(),
             }))
             .await
             .expect("first lookup");
         let second = server
             .symbol(Parameters(SymbolParams {
-                name: "chunk_source_with_meta".into(),
+                name: "chunk_source_with_meta_labeled".into(),
             }))
             .await
             .expect("second lookup");
