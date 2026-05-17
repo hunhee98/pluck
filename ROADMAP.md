@@ -32,8 +32,10 @@ expand, session dedup).
 
 ## Versioning policy
 
-The roadmap is the release train. When work lands on `main`, it should be
-assigned to the next unreleased version here.
+The roadmap is a milestone map, not an automatic version bump rule. When
+planned roadmap work lands on `main`, it should be assigned to the milestone
+that owns it. When unrelated issues, regressions, or release repairs come in,
+choose the SemVer lane independently.
 
 - Full versioning and release-lane rules live in
   [`docs/VERSIONING.md`](docs/VERSIONING.md).
@@ -43,7 +45,8 @@ assigned to the next unreleased version here.
 - `v0.x.y` patch releases are only for bug fixes, security/dependency updates,
   CI/release repairs, and documentation fixes that clarify shipped behavior.
 - New language or format support is never a patch release. It rides the next
-  minor train.
+  planned minor milestone. If the milestone mapping is wrong, update this
+  roadmap first instead of forcing the change into the wrong version.
 
 ---
 

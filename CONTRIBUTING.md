@@ -69,6 +69,12 @@ Every PR must choose a release lane before it merges. See
 - `release-now` — the PR that cuts a GitHub/crates.io release.
 - `no-release` — internal-only or test-only work with no user-visible behavior.
 
+Roadmap versions are milestone labels. If you are implementing an existing
+roadmap item, target its mapped milestone unless the mapping is now wrong. If
+the mapping is wrong, update `ROADMAP.md` first. If the work is outside the
+roadmap, classify it directly by SemVer impact instead of defaulting to the
+next minor.
+
 If a bug fix must ship before the next minor train, create a patch-only
 maintenance branch (for example `release/v0.3.x`) and cherry-pick it there.
 Once new minor features have landed on `main`, that same fix ships with the
@@ -148,6 +154,7 @@ If you edit anything under `docs/mcp-descriptions/`:
 - [ ] New MCP tool? Description carries `WHEN / WHY / FALLBACK` sections.
 - [ ] User-facing perf claim? Cited row in `benchmarks/baseline.json`.
 - [ ] Version lane selected in the PR body.
+- [ ] Roadmap mapping selected or updated in the PR body.
 - [ ] Patch backport decision selected in the PR body.
 - [ ] ROADMAP updated if the PR changes user-visible behavior.
 - [ ] CHANGELOG entry under `[Unreleased]`.

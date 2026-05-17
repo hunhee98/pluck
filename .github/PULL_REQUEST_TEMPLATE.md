@@ -20,6 +20,12 @@ Target version:
 
 - `v0.__.__`
 
+Roadmap mapping:
+
+- [ ] Existing roadmap item: `ROADMAP.md#...`
+- [ ] Outside roadmap; classified by SemVer impact.
+- [ ] Roadmap mapping changed in this PR.
+
 Patch backport:
 
 - [ ] Not needed.

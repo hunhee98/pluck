@@ -1,12 +1,34 @@
 # Versioning
 
-pluck uses the roadmap as the release train. The rule is simple:
-every PR must say what version lane it belongs to before it merges.
+pluck uses SemVer plus a roadmap milestone map. The rule is simple:
+every PR must say what kind of version movement it implies before it merges.
 
 This exists because agent-facing retrieval tools accumulate behavior fast:
 new formats, new MCP surfaces, ranking changes, and benchmark claims all
 change what users think they installed. Version decisions cannot live only
 in maintainer memory or an agent's chat context.
+
+## Roadmap map vs release decision
+
+`ROADMAP.md` assigns planned work to milestone versions such as `v0.4.0`,
+`v0.5.0`, and `v0.6.0`. Those labels are product planning buckets, not a
+reason to mechanically bump the minor number for every PR.
+
+Before changing versions, decide which case applies:
+
+| Case | Version decision |
+|---|---|
+| Planned roadmap capability | Target the roadmap milestone that owns it. Do not bump Cargo for every PR; bump when the train starts or the release is cut. |
+| Roadmap milestone now feels too broad or too narrow | Update `ROADMAP.md` first, then target the corrected milestone. |
+| Bug or issue against already shipped behavior | Patch release candidate: `v0.x.y`. Backport to the shipped line if users need it before the next minor. |
+| Bug in unreleased train-only behavior | Keep it in the active minor train. No patch release. |
+| CI/release/security fix affecting published releases | Patch release candidate. |
+| Internal refactor, test-only change, or unreleased-doc cleanup | `no-release` unless it changes the user-facing contract. |
+
+So yes: roadmap work often moves through `0.4`, `0.5`, `0.6` because the
+roadmap already named those minor milestones. Separately filed bugs, support
+issues, dependency/security fixes, or corrections to shipped behavior should
+use patch numbers when patch is the right SemVer shape.
 
 ## Release lanes
 
@@ -17,8 +39,9 @@ in maintainer memory or an agent's chat context.
 | `release-now` | The PR that cuts a GitHub/crates.io release. | Required. |
 | `no-release` | Internal refactors with no user-visible behavior, generated maintenance, or test-only changes. | None. |
 
-New language or file-format support is never a patch release. It rides the
-next minor train even if the implementation is small.
+New language or file-format support is normally a minor milestone because it is
+new user-visible capability. If the roadmap mapping is stale, change the
+roadmap mapping rather than pretending the capability is a patch.
 
 ## Current train
 
@@ -72,15 +95,19 @@ After `v0.4.0` ships, the same pattern becomes `release/v0.4.x` and
 
 Every PR should carry this release decision explicitly:
 
-1. Pick a release lane before coding: `patch`, `minor-train`,
+1. Check whether the work is already mapped in `ROADMAP.md`.
+2. If it is mapped, confirm the mapped milestone still makes sense.
+3. If it is not mapped, classify it on its own merits: shipped bug,
+   security/dependency/CI fix, new capability, internal-only, or release cut.
+4. Pick a release lane before coding: `patch`, `minor-train`,
    `release-now`, or `no-release`.
-2. Add a CHANGELOG entry under `[Unreleased]` unless the PR is truly
+5. Add a CHANGELOG entry under `[Unreleased]` unless the PR is truly
    `no-release`.
-3. Update `ROADMAP.md` when the PR changes a user-visible capability,
+6. Update `ROADMAP.md` when the PR changes a user-visible capability,
    language/format coverage, benchmark surface, or release target.
-4. If the PR bumps Cargo versions, bump the workspace version and every
+7. If the PR bumps Cargo versions, bump the workspace version and every
    internal crate dependency in lock-step.
-5. Before merge, confirm whether the change ships in the current minor
+8. Before merge, confirm whether the change ships in the current minor
    train or needs a maintenance-branch patch release.
 
 ## Release PR checklist
