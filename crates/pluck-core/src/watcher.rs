@@ -3,8 +3,8 @@
 //! Wraps the `notify` crate. Coalesces rapid events (editor save bursts
 //! emit several modify events per file) inside a small debounce window,
 //! then fires one `reindex_paths` call for the deduplicated batch. Drops
-//! events for non-source files via extension match (delegated to
-//! `Language::from_extension`).
+//! events for non-source files via path match (delegated to
+//! `Language::from_path`).
 
 use std::collections::HashSet;
 use std::path::PathBuf;

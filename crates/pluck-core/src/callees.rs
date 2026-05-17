@@ -73,8 +73,12 @@ pub fn extract_callees_in_range(
 /// deduplicated. Returns an empty Vec on parse / query errors — peek
 /// degrades to signature-only rather than failing the request.
 pub fn extract_callees(src: &str, lang: Language) -> Vec<String> {
-    let ts_lang = lang.ts_language();
+    let query_src = lang.callee_query_str();
+    if query_src.is_empty() {
+        return Vec::new();
+    }
 
+    let ts_lang = lang.ts_language();
     let mut parser = Parser::new();
     if parser.set_language(&ts_lang).is_err() {
         return Vec::new();
@@ -83,10 +87,6 @@ pub fn extract_callees(src: &str, lang: Language) -> Vec<String> {
         return Vec::new();
     };
 
-    let query_src = lang.callee_query_str();
-    if query_src.is_empty() {
-        return Vec::new();
-    }
     let Ok(query) = Query::new(&ts_lang, query_src) else {
         return Vec::new();
     };

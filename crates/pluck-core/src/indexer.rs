@@ -267,13 +267,17 @@ mod tests {
                 "Dockerfile".to_string(),
                 "FROM rust:1.78 AS builder\nRUN cargo fetch\n".to_string(),
             ),
+            (
+                "deploy.sh".to_string(),
+                "deploy() {\n  echo ok\n}\n".to_string(),
+            ),
             ("skip.unknown".to_string(), "ignored".to_string()),
         ];
         let stats = index_files_in_memory(&idx, &files).unwrap();
-        assert_eq!(stats.files_seen, 4);
-        assert_eq!(stats.files_indexed, 3);
+        assert_eq!(stats.files_seen, 5);
+        assert_eq!(stats.files_indexed, 4);
         assert_eq!(stats.files_skipped_lang, 1);
-        assert!(stats.chunks_indexed >= 6); // login, User, greet, logout, Dockerfile chunks
+        assert!(stats.chunks_indexed >= 7); // login, User, greet, logout, Dockerfile, shell chunks
     }
 
     #[test]

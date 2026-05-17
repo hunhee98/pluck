@@ -19,6 +19,8 @@ Versioning follows [SemVer](https://semver.org).
   `scripts.build`, `services.web.image`, and `workspace.dependencies.serde`.
 - Dockerfile / Containerfile chunker support for build stages, individual
   instructions, dependency-manifest copies, and install blocks.
+- Shell chunker support for functions, `case` arms, and major comment-marked
+  script sections.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.

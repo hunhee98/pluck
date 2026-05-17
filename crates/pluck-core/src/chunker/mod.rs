@@ -1,6 +1,7 @@
 mod config;
 mod dockerfile;
 mod lang;
+mod shell;
 mod types;
 
 pub use lang::Lang as Language;
@@ -54,6 +55,9 @@ fn chunk_source_with_meta_labeled(
     }
     if lang == Language::Dockerfile {
         return Ok(dockerfile::chunk_dockerfile_source(src));
+    }
+    if lang == Language::Shell {
+        return Ok(shell::chunk_shell_source(src));
     }
 
     let Some(query) = lang.compiled_query() else {
@@ -361,7 +365,8 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Json
         | Language::Yaml
         | Language::Toml
-        | Language::Dockerfile => None,
+        | Language::Dockerfile
+        | Language::Shell => None,
     }
 }
 
@@ -1704,6 +1709,99 @@ ENTRYPOINT ["pluck"]
             .unwrap();
         assert_eq!(heredoc.symbol, "install: apt-get install");
         assert!(heredoc.content.contains("EOF"));
+    }
+
+    // ── Shell ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_shell_functions_case_arms_and_sections() {
+        assert_eq!(Language::from_extension("sh"), Some(Language::Shell));
+        assert_eq!(Language::from_extension("bash"), Some(Language::Shell));
+        assert_eq!(
+            Language::from_path(std::path::Path::new(".zshrc")),
+            Some(Language::Shell)
+        );
+
+        let src = r#"
+#!/usr/bin/env bash
+set -euo pipefail
+
+# === Build helpers ===
+# Compile the release binary.
+build_release() {
+  cargo build --release
+}
+
+function deploy_app {
+  local target="${1:-staging}"
+  case "$target" in
+    prod|production)
+      ./scripts/deploy-prod.sh
+      ;;
+    staging)
+      ./scripts/deploy-staging.sh
+      ;;
+    *)
+      echo "unknown target"
+      return 1
+      ;;
+  esac
+}
+
+# Cleanup
+cleanup () {
+  rm -rf target/tmp
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Shell).unwrap();
+        assert!(!result.parse_errors);
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"section: Build helpers"),
+            "missing shell section: {result:?}"
+        );
+        assert!(
+            names.contains(&"build_release"),
+            "missing name() function: {result:?}"
+        );
+        assert!(
+            names.contains(&"deploy_app"),
+            "missing function keyword form: {result:?}"
+        );
+        assert!(
+            names.contains(&"cleanup"),
+            "missing spaced function form: {result:?}"
+        );
+        assert!(
+            names.contains(&"case: prod|production"),
+            "missing prod case arm: {result:?}"
+        );
+        assert!(
+            names.contains(&"case: staging"),
+            "missing staging case arm: {result:?}"
+        );
+        assert!(
+            names.contains(&"case: *"),
+            "missing fallback case arm: {result:?}"
+        );
+
+        let build = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "build_release")
+            .unwrap();
+        assert_eq!(build.kind, ChunkKind::Function);
+        assert!(build.doc_comment.contains("Compile the release binary."));
+        assert!(build.content.contains("cargo build --release"));
+
+        let prod = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "case: prod|production")
+            .unwrap();
+        assert_eq!(prod.kind, ChunkKind::Module);
+        assert!(prod.content.contains("deploy-prod"));
     }
 
     #[test]
