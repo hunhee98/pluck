@@ -77,3 +77,7 @@ harness = false
 [[bench]]
 name = "digest"
 harness = false
+
+[[bench]]
+name = "format_recovery"
+harness = false

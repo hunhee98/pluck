@@ -1,0 +1,360 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "java service",
+      "path": "src/main/java/com/acme/AuthService.java",
+      "min_chunks": 6,
+      "source": [
+        "package com.acme;",
+        "",
+        "import java.util.Optional;",
+        "",
+        "/**",
+        " * Token lifecycle operations.",
+        " */",
+        "public final class AuthService {",
+        "    private final TokenStore store;",
+        "",
+        "    public AuthService(TokenStore store) {",
+        "        this.store = store;",
+        "    }",
+        "",
+        "    public boolean verify(String token) {",
+        "        return store.lookup(token).isPresent();",
+        "    }",
+        "}",
+        "",
+        "interface TokenStore {",
+        "    Optional<String> lookup(String token);",
+        "}",
+        "",
+        "record LoginRequest(String token) {}",
+        "",
+        "enum AuthStatus {",
+        "    VALID,",
+        "    EXPIRED",
+        "}"
+      ],
+      "expected": [
+        { "symbol": "AuthService", "kind": "Class", "doc_contains": "Token lifecycle operations" },
+        { "symbol": "AuthService", "kind": "Method", "contains": "this.store = store" },
+        { "symbol": "verify", "kind": "Method", "contains": "store.lookup" },
+        { "symbol": "TokenStore" },
+        { "symbol": "LoginRequest" },
+        { "symbol": "AuthStatus", "kind": "Enum" }
+      ]
+    },
+    {
+      "name": "tsx component",
+      "path": "src/components/Component.tsx",
+      "min_chunks": 1,
+      "source": [
+        "import React from \"react\";",
+        "",
+        "export function Component({ label }: { label: string }) {",
+        "  return <div className=\"card\">{label}</div>;",
+        "}"
+      ],
+      "expected": [
+        { "symbol": "Component", "kind": "Function", "contains": "className=\"card\"" }
+      ]
+    },
+    {
+      "name": "html shell",
+      "path": "templates/index.html",
+      "min_chunks": 7,
+      "source": [
+        "<!doctype html>",
+        "<html>",
+        "  <body>",
+        "    <main id=\"app\">",
+        "      <section id=\"hero\">",
+        "        <h1>Launch faster</h1>",
+        "      </section>",
+        "      <article data-component=\"PricingCard\">",
+        "        <header><h2>Pro</h2></header>",
+        "      </article>",
+        "      <app-shell>",
+        "        <app-card title=\"Usage\"></app-card>",
+        "      </app-shell>",
+        "      <script type=\"module\">",
+        "        initDashboard();",
+        "      </script>",
+        "      <style scoped>",
+        "        main { display: grid; }",
+        "      </style>",
+        "    </main>",
+        "  </body>",
+        "</html>"
+      ],
+      "expected": [
+        { "symbol": "main#app", "kind": "Module" },
+        { "symbol": "section#hero", "kind": "Module" },
+        { "symbol": "article[PricingCard]", "kind": "Module" },
+        { "symbol": "app-shell", "kind": "Module" },
+        { "symbol": "app-card", "kind": "Module" },
+        { "symbol": "script[type=module]", "kind": "Module", "contains": "initDashboard" },
+        { "symbol": "style[scoped]", "kind": "Module", "contains": "display: grid" }
+      ]
+    },
+    {
+      "name": "css theme",
+      "path": "assets/theme.css",
+      "min_chunks": 4,
+      "source": [
+        "/* Theme root */",
+        ":root {",
+        "  --brand: #0f766e;",
+        "}",
+        "",
+        ".button,",
+        ".link:hover {",
+        "  color: var(--brand);",
+        "}",
+        "",
+        "@media (min-width: 720px) {",
+        "  .button {",
+        "    display: inline-flex;",
+        "  }",
+        "}",
+        "",
+        "@keyframes spin {",
+        "  from { transform: rotate(0deg); }",
+        "  to { transform: rotate(360deg); }",
+        "}"
+      ],
+      "expected": [
+        { "symbol": ":root", "kind": "Module" },
+        { "symbol": ".button, .link:hover", "kind": "Module" },
+        { "symbol": "@media (min-width: 720px)", "kind": "Module" },
+        { "symbol": "@keyframes spin", "kind": "Module" }
+      ]
+    },
+    {
+      "name": "scss dashboard",
+      "path": "assets/dashboard.scss",
+      "min_chunks": 4,
+      "source": [
+        "// Card theme helpers.",
+        "@mixin card-tone($tone) {",
+        "  border-color: $tone;",
+        "}",
+        "",
+        "@function spacing($step) {",
+        "  @return $step * 0.25rem;",
+        "}",
+        "",
+        ".dashboard {",
+        "  @include card-tone(#0f766e);",
+        "",
+        "  &__item {",
+        "    padding: spacing(4);",
+        "  }",
+        "}"
+      ],
+      "expected": [
+        { "symbol": "@mixin card-tone($tone)", "kind": "Module", "doc_contains": "Card theme helpers" },
+        { "symbol": "@function spacing($step)", "kind": "Module" },
+        { "symbol": ".dashboard", "kind": "Module" },
+        { "symbol": "&__item", "kind": "Module" }
+      ]
+    },
+    {
+      "name": "markdown docs",
+      "path": "docs/pluck.md",
+      "min_chunks": 3,
+      "source": [
+        "# Pluck Docs",
+        "",
+        "Use pluck before raw file reads.",
+        "",
+        "```rust",
+        "fn main() {",
+        "    println!(\"fast\");",
+        "}",
+        "```",
+        "",
+        "Install",
+        "-------",
+        "",
+        "Run the MCP server from your agent."
+      ],
+      "expected": [
+        { "symbol": "Pluck Docs", "kind": "Module" },
+        { "symbol": "fenced code: rust", "kind": "Module", "contains": "println!" },
+        { "symbol": "Install", "kind": "Module" }
+      ]
+    },
+    {
+      "name": "mdx page",
+      "path": "docs/dashboard.mdx",
+      "min_chunks": 3,
+      "source": [
+        "---",
+        "title: Dashboard",
+        "---",
+        "",
+        "import Widget from \"./Widget\"",
+        "",
+        "# Dashboard MDX",
+        "",
+        "<Widget status=\"ok\" />",
+        "",
+        "~~~tsx",
+        "<Widget status=\"ok\" />",
+        "~~~",
+        "",
+        "## Props",
+        "",
+        "<PropTable />"
+      ],
+      "expected": [
+        { "symbol": "Dashboard MDX", "kind": "Module" },
+        { "symbol": "fenced code: tsx", "kind": "Module", "contains": "<Widget status=\"ok\" />" },
+        { "symbol": "Props", "kind": "Module" }
+      ]
+    },
+    {
+      "name": "json package metadata",
+      "path": "package.json",
+      "min_chunks": 6,
+      "source": [
+        "{",
+        "  \"scripts\": {",
+        "    \"build\": \"cargo build\",",
+        "    \"test\": \"cargo test\"",
+        "  },",
+        "  \"dependencies\": {",
+        "    \"serde\": { \"version\": \"1\", \"features\": [\"derive\"] }",
+        "  },",
+        "  \"plugins\": [",
+        "    { \"name\": \"auth\", \"enabled\": true }",
+        "  ]",
+        "}"
+      ],
+      "expected": [
+        { "symbol": "scripts.build", "kind": "Module", "contains": "cargo build" },
+        { "symbol": "dependencies.serde.version", "kind": "Module", "contains": "\"1\"" },
+        { "symbol": "plugins[0].name", "kind": "Module", "contains": "auth" }
+      ]
+    },
+    {
+      "name": "yaml services",
+      "path": ".github/workflows/ci.yml",
+      "min_chunks": 6,
+      "source": [
+        "services:",
+        "  web:",
+        "    image: nginx:latest",
+        "    env:",
+        "      - name: RUST_LOG",
+        "        value: debug",
+        "  worker:",
+        "    command: cargo run"
+      ],
+      "expected": [
+        { "symbol": "services.web.image", "kind": "Module", "contains": "nginx" },
+        { "symbol": "services.web.env.name", "kind": "Module", "contains": "RUST_LOG" },
+        { "symbol": "services.worker.command", "kind": "Module", "contains": "cargo run" }
+      ]
+    },
+    {
+      "name": "toml workspace",
+      "path": "Cargo.toml",
+      "min_chunks": 5,
+      "source": [
+        "[package]",
+        "name = \"pluck\"",
+        "version = \"0.4.0\"",
+        "",
+        "[workspace.dependencies]",
+        "serde = { version = \"1\", features = [\"derive\"] }",
+        "",
+        "[[bin]]",
+        "name = \"pluck\"",
+        "path = \"src/main.rs\""
+      ],
+      "expected": [
+        { "symbol": "package.name", "kind": "Module", "contains": "pluck" },
+        { "symbol": "workspace.dependencies.serde", "kind": "Module", "contains": "derive" },
+        { "symbol": "bin[].path", "kind": "Module", "contains": "src/main.rs" }
+      ]
+    },
+    {
+      "name": "dockerfile release image",
+      "path": "Dockerfile",
+      "min_chunks": 5,
+      "source": [
+        "# syntax=docker/dockerfile:1.7",
+        "FROM rust:1.78 AS builder",
+        "WORKDIR /app",
+        "COPY Cargo.toml Cargo.lock ./",
+        "RUN apt-get update && apt-get install -y pkg-config \\",
+        "    libssl-dev && cargo fetch",
+        "COPY . .",
+        "RUN cargo build --release",
+        "",
+        "FROM debian:bookworm-slim",
+        "RUN <<EOF",
+        "apt-get update",
+        "apt-get install -y ca-certificates",
+        "EOF",
+        "COPY --from=builder /app/target/release/pluck /usr/local/bin/pluck",
+        "ENTRYPOINT [\"pluck\"]"
+      ],
+      "expected": [
+        { "symbol": "stage: builder", "kind": "Module", "contains": "FROM rust:1.78 AS builder" },
+        { "symbol": "stage 2: debian:bookworm-slim", "kind": "Module" },
+        { "symbol": "deps: Cargo.toml Cargo.lock ./", "kind": "Module" },
+        { "symbol": "install: apt-get install", "kind": "Module", "contains": "libssl-dev" },
+        { "symbol": "RUN cargo build --release", "kind": "Module" }
+      ]
+    },
+    {
+      "name": "shell deployment",
+      "path": "scripts/deploy.sh",
+      "min_chunks": 7,
+      "source": [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        "",
+        "# === Build helpers ===",
+        "# Compile the release binary.",
+        "build_release() {",
+        "  cargo build --release",
+        "}",
+        "",
+        "function deploy_app {",
+        "  local target=\"${1:-staging}\"",
+        "  case \"$target\" in",
+        "    prod|production)",
+        "      ./scripts/deploy-prod.sh",
+        "      ;;",
+        "    staging)",
+        "      ./scripts/deploy-staging.sh",
+        "      ;;",
+        "    *)",
+        "      echo \"unknown target\"",
+        "      return 1",
+        "      ;;",
+        "  esac",
+        "}",
+        "",
+        "# Cleanup",
+        "cleanup () {",
+        "  rm -rf target/tmp",
+        "}"
+      ],
+      "expected": [
+        { "symbol": "section: Build helpers", "kind": "Module" },
+        { "symbol": "build_release", "kind": "Function", "doc_contains": "Compile the release binary" },
+        { "symbol": "deploy_app", "kind": "Function", "contains": "case \"$target\" in" },
+        { "symbol": "case: prod|production", "kind": "Module", "contains": "deploy-prod" },
+        { "symbol": "case: staging", "kind": "Module" },
+        { "symbol": "case: *", "kind": "Module" },
+        { "symbol": "cleanup", "kind": "Function" }
+      ]
+    }
+  ]
+}
