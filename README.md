@@ -208,6 +208,8 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 ## Roadmap
 
 Versioning details live in [`docs/VERSIONING.md`](docs/VERSIONING.md).
+Maintainer release flow lives in
+[`docs/MAINTAINER_LOOP.md`](docs/MAINTAINER_LOOP.md).
 
 - **v0.2.0 — shipped**: First crates.io publish, MCP tools, session dedup,
   smart outline, and expanded surface — `digest`, `impact`, `deps`, `plan`.

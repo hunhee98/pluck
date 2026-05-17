@@ -22,6 +22,9 @@ Versioning follows [SemVer](https://semver.org).
   releases are a first-class path instead of an ad hoc manual edit.
 - Roadmap-vs-release decision rules, separating planned minor milestones from
   independent patch decisions for shipped bugs and support issues.
+- Maintainer orchestration loop and `scripts/maintainer-status.py`, so merge
+  completion always surfaces version, tag, changelog, patch-backport, and
+  release-cut decisions.
 
 ### Changed
 
