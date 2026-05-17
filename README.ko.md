@@ -206,8 +206,8 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 - **v0.2.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인,
   확장된 검색 표면 — `digest`, `impact`, `deps`, `plan`.
 - **v0.3.0**: 자연어 리콜 품질 — 쿼리 확장, 2단계 cascade, NDCG@10 측정.
-- **v0.4.0**: Java + 레포 포맷 커버리지 — HTML, CSS/SCSS,
-  Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell.
+- **v0.4.0**: Java + 레포 포맷 커버리지 — Java와 HTML은 반영됨;
+  CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell은 남아 있음.
 - **v0.5.0**: 시스템 + JVM 티어 — C, C++, Kotlin, SQL, Terraform/HCL.
 - **v0.6.0**: 앱 프레임워크 티어 — Ruby, PHP, Swift, Vue, Svelte, Astro,
   OpenAPI / GraphQL.

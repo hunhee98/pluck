@@ -140,17 +140,26 @@ pub fn chunk_source_with_meta(src: &str, lang: Language) -> Result<ChunkResult> 
         let end_byte = node.end_byte();
 
         let content = src[start_byte..end_byte].to_string();
+        let raw_symbol = src[nr].to_string();
+        let symbol = normalize_symbol(lang, &raw_symbol, &content);
+        if !should_emit_chunk(lang, &kind, &symbol, &content) {
+            continue;
+        }
         let doc_comment = leading_doc_comment(&lines, lang, node.start_position().row, &content);
 
         // signature = node text up to the `body` field's start (if present),
         // so multi-line parameter lists are captured intact.
-        let signature = match node.child_by_field_name("body") {
-            Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
-            None => content.lines().next().unwrap_or("").trim_end().to_string(),
+        let signature = if lang == Language::Html {
+            html_signature(&content)
+        } else {
+            match node.child_by_field_name("body") {
+                Some(body) => src[start_byte..body.start_byte()].trim_end().to_string(),
+                None => content.lines().next().unwrap_or("").trim_end().to_string(),
+            }
         };
 
         partials.push(PartialChunk {
-            symbol: src[nr].to_string(),
+            symbol,
             kind,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
@@ -298,6 +307,10 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             line.strip_prefix("//").map(|s| s.trim().to_string())
         }
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
+        Language::Html => line
+            .strip_prefix("<!--")
+            .and_then(|s| s.strip_suffix("-->"))
+            .map(|s| s.trim().to_string()),
     }
 }
 
@@ -369,6 +382,142 @@ fn kind_from_prefix(prefix: &str) -> ChunkKind {
         "module" => ChunkKind::Module,
         _ => ChunkKind::Function,
     }
+}
+
+fn normalize_symbol(lang: Language, raw_symbol: &str, content: &str) -> String {
+    if lang != Language::Html {
+        return raw_symbol.to_string();
+    }
+
+    let tag = raw_symbol.trim().to_ascii_lowercase();
+    if let Some(id) = html_non_empty_attr_value(content, "id") {
+        return format!("{tag}#{id}");
+    }
+    if let Some(name) = html_non_empty_attr_value(content, "data-component")
+        .or_else(|| html_non_empty_attr_value(content, "data-controller"))
+        .or_else(|| html_non_empty_attr_value(content, "data-testid"))
+        .or_else(|| html_non_empty_attr_value(content, "data-test"))
+    {
+        return format!("{tag}[{name}]");
+    }
+    if tag == "script" {
+        if let Some(src) = html_non_empty_attr_value(content, "src") {
+            return format!("script[src={src}]");
+        }
+        if let Some(typ) = html_non_empty_attr_value(content, "type") {
+            return format!("script[type={typ}]");
+        }
+    }
+    if tag == "style" && html_attr_value(content, "scoped").is_some() {
+        return "style[scoped]".to_string();
+    }
+
+    tag
+}
+
+fn should_emit_chunk(lang: Language, kind: &ChunkKind, symbol: &str, content: &str) -> bool {
+    if lang != Language::Html {
+        return true;
+    }
+    if kind != &ChunkKind::Module {
+        return true;
+    }
+
+    let tag = html_tag_from_symbol(symbol);
+    is_semantic_html_tag(tag)
+        || tag.contains('-')
+        || html_non_empty_attr_value(content, "id").is_some()
+        || html_non_empty_attr_value(content, "data-component").is_some()
+        || html_non_empty_attr_value(content, "data-controller").is_some()
+        || html_non_empty_attr_value(content, "data-testid").is_some()
+        || html_non_empty_attr_value(content, "data-test").is_some()
+        || html_non_empty_attr_value(content, "role").is_some()
+}
+
+fn html_tag_from_symbol(symbol: &str) -> &str {
+    symbol
+        .split(['#', '.', '['])
+        .next()
+        .unwrap_or(symbol)
+        .trim()
+}
+
+fn is_semantic_html_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "main"
+            | "article"
+            | "section"
+            | "nav"
+            | "header"
+            | "footer"
+            | "aside"
+            | "form"
+            | "dialog"
+            | "details"
+            | "summary"
+            | "template"
+            | "slot"
+            | "figure"
+            | "figcaption"
+            | "table"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "script"
+            | "style"
+    )
+}
+
+fn html_signature(content: &str) -> String {
+    content
+        .find('>')
+        .map(|idx| content[..=idx].trim_end().to_string())
+        .unwrap_or_else(|| content.lines().next().unwrap_or("").trim_end().to_string())
+}
+
+fn html_attr_value(content: &str, name: &str) -> Option<String> {
+    let open_end = content.find('>').unwrap_or(content.len());
+    let open = &content[..open_end];
+    let lower = open.to_ascii_lowercase();
+    let name_lower = name.to_ascii_lowercase();
+
+    let mut search_from = 0;
+    while let Some(rel) = lower[search_from..].find(&name_lower) {
+        let start = search_from + rel;
+        let before = lower[..start].chars().next_back();
+        let after = lower[start + name_lower.len()..].chars().next();
+        let before_ok = before
+            .map(|c| c.is_whitespace() || c == '<' || c == '/')
+            .unwrap_or(true);
+        let after_ok = after
+            .map(|c| c.is_whitespace() || c == '=' || c == '>' || c == '/')
+            .unwrap_or(true);
+        if before_ok && after_ok {
+            let rest = open[start + name.len()..].trim_start();
+            if !rest.starts_with('=') {
+                return Some(String::new());
+            }
+            let value = rest[1..].trim_start();
+            if let Some(quoted) = value.strip_prefix('"') {
+                return quoted.split('"').next().map(|s| s.to_string());
+            }
+            if let Some(quoted) = value.strip_prefix('\'') {
+                return quoted.split('\'').next().map(|s| s.to_string());
+            }
+            return value
+                .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+                .next()
+                .map(|s| s.to_string());
+        }
+        search_from = start + name_lower.len();
+    }
+
+    None
+}
+
+fn html_non_empty_attr_value(content: &str, name: &str) -> Option<String> {
+    html_attr_value(content, name).filter(|value| !value.is_empty())
 }
 
 #[cfg(test)]
@@ -862,6 +1011,109 @@ class Handler {
                 || handler_ctor.callees.contains(&"ArrayList".to_string()),
             "constructor callee missing: {:?}",
             handler_ctor.callees
+        );
+    }
+
+    // ── HTML ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_html_semantic_component_script_and_style_chunks() {
+        let src = r#"
+<!doctype html>
+<html>
+  <body>
+    <!-- Product shell -->
+    <main id="app">
+      <section id="hero">
+        <h1>Launch faster</h1>
+        <p>Not its own chunk.</p>
+      </section>
+
+      <article data-component="PricingCard">
+        <header><h2>Pro</h2></header>
+      </article>
+
+      <app-shell>
+        <app-card title="Usage"></app-card>
+      </app-shell>
+
+      <script type="module">
+        initDashboard();
+      </script>
+
+      <style scoped>
+        main { display: grid; }
+      </style>
+    </main>
+  </body>
+</html>
+"#;
+        let chunks = chunk_source(src, Language::Html).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&"main#app"), "missing main: {chunks:?}");
+        assert!(
+            names.contains(&"section#hero"),
+            "missing section: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"article[PricingCard]"),
+            "missing data-component article: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"app-shell"),
+            "missing custom element: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"app-card"),
+            "missing nested custom element: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"script[type=module]"),
+            "missing module script: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"style[scoped]"),
+            "missing scoped style: {chunks:?}"
+        );
+        assert!(
+            !names.contains(&"p"),
+            "inline paragraph should not become a chunk: {chunks:?}"
+        );
+
+        let hero = chunks.iter().find(|c| c.symbol == "section#hero").unwrap();
+        assert_eq!(hero.kind, ChunkKind::Module);
+        assert!(hero.signature.contains("<section id=\"hero\">"));
+    }
+
+    #[test]
+    fn test_html_extension_and_role_chunks() {
+        assert_eq!(Language::from_extension("html"), Some(Language::Html));
+        assert_eq!(Language::from_extension("htm"), Some(Language::Html));
+
+        let src = r#"
+<div class="layout">
+  <span>ignored</span>
+</div>
+<div role="alert">Session expired</div>
+<my-widget id="profile"></my-widget>
+<app-icon name="search" />
+"#;
+        let chunks = chunk_source(src, Language::Html).unwrap();
+        let names: Vec<&str> = chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert_eq!(
+            names.iter().filter(|name| **name == "div").count(),
+            1,
+            "only the role-bearing div should be indexed: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"my-widget#profile"),
+            "custom element with id missing: {chunks:?}"
+        );
+        assert!(
+            names.contains(&"app-icon"),
+            "self-closing custom element missing: {chunks:?}"
         );
     }
 
