@@ -353,6 +353,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::JavaScript
         | Language::Go
         | Language::Java
+        | Language::Kotlin
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Html => line
@@ -1193,6 +1194,103 @@ class Handler {
                 || handler_ctor.callees.contains(&"ArrayList".to_string()),
             "constructor callee missing: {:?}",
             handler_ctor.callees
+        );
+    }
+
+    // ── Kotlin ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_kotlin_class_object_function_and_imports() {
+        assert_eq!(Language::from_extension("kt"), Some(Language::Kotlin));
+        assert_eq!(Language::from_extension("kts"), Some(Language::Kotlin));
+
+        let src = r#"
+package com.example.auth
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+/**
+ * Token lifecycle operations.
+ */
+class AuthService(private val store: TokenStore) {
+    fun verify(token: String): Boolean {
+        return store.lookup(token) != null
+    }
+}
+
+interface TokenStore {
+    fun lookup(token: String): String?
+}
+
+data class LoginRequest(val token: String)
+
+object SessionRegistry {
+    fun current(): String? = null
+}
+
+enum class AuthStatus {
+    VALID,
+    EXPIRED,
+}
+
+// Top-level extension function.
+fun String.normalizeToken(): String = trim().lowercase()
+"#;
+        let result = chunk_source_with_meta(src, Language::Kotlin).unwrap();
+        assert!(!result.parse_errors, "Kotlin parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&"AuthService"), "missing class: {result:?}");
+        assert!(names.contains(&"verify"), "missing member fun: {result:?}");
+        assert!(
+            names.contains(&"TokenStore"),
+            "missing interface: {result:?}"
+        );
+        assert!(
+            names.contains(&"LoginRequest"),
+            "missing data class: {result:?}"
+        );
+        assert!(
+            names.contains(&"SessionRegistry"),
+            "missing object: {result:?}"
+        );
+        assert!(names.contains(&"AuthStatus"), "missing enum: {result:?}");
+        assert!(
+            names.contains(&"current"),
+            "missing object member fun: {result:?}"
+        );
+        assert!(
+            names.contains(&"normalizeToken"),
+            "missing top-level extension fun: {result:?}"
+        );
+
+        let class = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "AuthService" && c.kind == ChunkKind::Class)
+            .expect("AuthService class missing");
+        assert!(class.doc_comment.contains("Token lifecycle operations"));
+
+        let verify = result.chunks.iter().find(|c| c.symbol == "verify").unwrap();
+        assert_eq!(verify.kind, ChunkKind::Method);
+        assert!(verify.signature.contains("fun verify"));
+        assert!(
+            verify.callees.contains(&"lookup".to_string()),
+            "verify callees missing lookup: {:?}",
+            verify.callees
+        );
+
+        assert!(
+            result.imports.contains(&"kotlinx.coroutines.flow.Flow".to_string()),
+            "missing import: {:?}",
+            result.imports
+        );
+        assert!(
+            result.imports.contains(&"kotlinx.coroutines.flow.map".to_string()),
+            "missing import: {:?}",
+            result.imports
         );
     }
 
