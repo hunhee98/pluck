@@ -14,6 +14,9 @@
 #      publishable crate in dependency order:
 #      pluck-core → pluck-mcp → pluck-cli.
 #   5. pluck-bench is `publish = false` and stays local.
+#   6. The tag-push workflow builds release tarballs and creates the
+#      GitHub Release. Always watch that workflow and verify assets before
+#      calling the release complete.
 #
 # crates.io requires path deps to also carry a `version =` entry, which
 # the crate manifests already declare. If you bump the workspace
@@ -80,8 +83,15 @@ if [ "$DRY_RUN" = true ]; then
   echo "Dry run OK. Re-run with --publish to push to crates.io."
   echo "Dependent publish verification is intentionally deferred until the parent crate version exists on crates.io."
 else
-  echo "Published. Next: tag the commit, push tags, update the brew tap."
-  echo "  git tag v\$(cargo metadata --no-deps --format-version 1 \
-    | jq -r '.packages[] | select(.name == \"pluck-core\") | .version')"
-  echo "  git push --tags"
+  version=$(cargo metadata --no-deps --format-version 1 \
+    | jq -r '.packages[] | select(.name == "pluck-core") | .version')
+  tag="v${version}"
+  echo "Published. Next: tag the commit, push it, and verify the GitHub Release."
+  echo "  git tag -a ${tag} -m \"${tag}\""
+  echo "  git push origin main"
+  echo "  git push origin ${tag}"
+  echo "  gh run watch \$(gh run list --workflow Release --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status"
+  echo "  gh release view ${tag} --json url,assets,isDraft,isPrerelease"
+  echo
+  echo "Only call the release complete after the GitHub Release exists and all expected tarballs are attached."
 fi

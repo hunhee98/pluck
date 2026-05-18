@@ -49,6 +49,13 @@ Versioning follows [SemVer](https://semver.org).
   TypeScript grammar. Parse warnings include the repo-relative path, and index
   summaries count files with parse errors.
 
+- Release workflow now owns GitHub Release creation and binary asset
+  upload only; crates.io publishing stays in `scripts/release.sh` to
+  avoid duplicate publish attempts after a tag push.
+- Release workflow now configures target OpenSSL for
+  `aarch64-unknown-linux-gnu` cross builds so the ARM Linux tarball
+  remains part of the release asset set.
+
 ## [0.3.0] — 2026-05-17
 
 ### Added

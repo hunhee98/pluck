@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, e.g. v0.2.0"
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,11 +30,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
           submodules: recursive
 
       - name: Verify release metadata
-        run: python3 scripts/version-check.py --tag "${GITHUB_REF_NAME}"
+        run: python3 scripts/version-check.py --tag "${RELEASE_TAG}"
 
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
@@ -76,13 +85,34 @@ jobs:
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - name: Install Rust toolchain from rust-toolchain.toml
         run: |
           rustup show
           rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+
+      # Cross-compile to aarch64 Linux needs a cross-linker plus target
+      # OpenSSL. `hf-hub` uses native-tls in the sync downloader, so the
+      # release builder must provide arm64 libssl to keep this target in
+      # the artifact set.
+      - name: Install aarch64 cross-toolchain (Linux only)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config libssl-dev:arm64
+          echo "[target.aarch64-unknown-linux-gnu]" >> ~/.cargo/config.toml
+          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig" >> "$GITHUB_ENV"
+          echo "AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_LIB_DIR=/usr/lib/aarch64-linux-gnu" >> "$GITHUB_ENV"
+          echo "AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR=/usr/include" >> "$GITHUB_ENV"
 
       - name: Build pluck + pluckd
         run: cargo build --release --target ${{ matrix.target }} --bins -p pluck-cli -p pluck-mcp
@@ -107,33 +137,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v4
         with:
           path: dist/
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/**/*.tar.gz
           generate_release_notes: true
-
-  crates_io:
-    name: publish crates.io
-    needs: github_release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Install Rust toolchain from rust-toolchain.toml
-        run: rustup show
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Publish (ordered, with index-propagation sleeps)
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          cargo publish -p pluck-core
-          # crates.io needs a moment to index the parent before dependents
-          # can find it. 20s has been reliable for similar workspaces.
-          sleep 20
-          cargo publish -p pluck-mcp
-          sleep 20
-          cargo publish -p pluck-cli
