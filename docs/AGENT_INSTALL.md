@@ -23,6 +23,10 @@ Install / register:
   `brew tap hunhee98/pluck && brew install pluck`
 - Register pluckd as an MCP server named `pluck` for this repo.
 - Prefer project-scoped configuration when the agent supports it.
+- If the agent reports an unsupported MCP protocol version such as
+  `Unsupported protocol version: 2025-11-25`, keep pluck's default modern
+  protocol for other clients, but pin this agent's server entry with:
+  `PLUCK_MCP_PROTOCOL_VERSION=2025-06-18`.
 - Verify with `pluck --version`, `pluckd --version`, and the agent's MCP
   server/tool listing command if one exists.
 
@@ -55,6 +59,10 @@ To make pluck the first retrieval choice:
 - Other MCP-capable agents:
   - Inspect the agent's official MCP config, permission, hook, and project-rule
     mechanisms.
+  - If the client cannot connect to pluck because it does not support the
+    current MCP protocol, add an environment override to the pluck MCP server
+    config instead of downgrading pluck globally:
+    `{ "env": { "PLUCK_MCP_PROTOCOL_VERSION": "2025-06-18" } }`.
   - Apply the strongest available combination: MCP registration first, then
     permissions/allowlists/hooks when safe, then durable project instructions.
 

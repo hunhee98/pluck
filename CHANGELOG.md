@@ -45,6 +45,9 @@ Versioning follows [SemVer](https://semver.org).
 
 ### Fixed
 
+- `pluckd` can pin its advertised MCP protocol with
+  `PLUCK_MCP_PROTOCOL_VERSION` for clients that have not caught up to the
+  current `2025-11-25` protocol, while keeping the default protocol unchanged.
 - TSX files now parse with tree-sitter's TSX grammar instead of the plain
   TypeScript grammar. Parse warnings include the repo-relative path, and index
   summaries count files with parse errors.
