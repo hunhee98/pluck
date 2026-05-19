@@ -355,6 +355,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Java
         | Language::Kotlin
         | Language::C
+        | Language::Cpp
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
@@ -1556,6 +1557,263 @@ ALTER TABLE accounts ADD COLUMN locked_at TIMESTAMPTZ;
         // FK REFERENCES syntax parses cleanly (otherwise parse_errors
         // would already have caught it above).
         assert!(events_table.content.contains("REFERENCES accounts(id)"));
+    }
+
+    // ── C++ ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_cpp_namespace_class_template_and_qualified_impl() {
+        assert_eq!(Language::from_extension("cpp"), Some(Language::Cpp));
+        assert_eq!(Language::from_extension("cc"), Some(Language::Cpp));
+        assert_eq!(Language::from_extension("cxx"), Some(Language::Cpp));
+        assert_eq!(Language::from_extension("hpp"), Some(Language::Cpp));
+        assert_eq!(Language::from_extension("hxx"), Some(Language::Cpp));
+
+        let src = r#"
+#include <vector>
+#include "session.h"
+
+namespace pluck::auth {
+
+enum class Status {
+    Ok,
+    Expired,
+};
+
+// Verifies issued tokens.
+class TokenStore {
+public:
+    TokenStore(std::size_t cap);
+    ~TokenStore();
+
+    bool verify(const std::string &token) const;
+
+    Status operator()(const std::string &token) const;
+
+private:
+    std::vector<std::string> tokens_;
+};
+
+TokenStore::TokenStore(std::size_t cap) : tokens_(cap) {}
+TokenStore::~TokenStore() = default;
+
+bool TokenStore::verify(const std::string &token) const {
+    return std::find(tokens_.begin(), tokens_.end(), token) != tokens_.end();
+}
+
+template <typename T>
+T clamp(T v, T lo, T hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+template <typename T>
+class Cache {
+public:
+    void put(const std::string &key, T value);
+    T get(const std::string &key) const;
+};
+
+}  // namespace pluck::auth
+"#;
+        let result = chunk_source_with_meta(src, Language::Cpp).unwrap();
+        assert!(!result.parse_errors, "C++ parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        // Namespace (nested form).
+        assert!(
+            names.contains(&"pluck::auth"),
+            "missing nested namespace: {result:?}"
+        );
+
+        // enum class + class.
+        assert!(names.contains(&"Status"), "missing scoped enum: {result:?}");
+        assert!(names.contains(&"TokenStore"), "missing class: {result:?}");
+        assert!(names.contains(&"Cache"), "missing templated class: {result:?}");
+
+        // In-class member declarations.
+        assert!(names.contains(&"verify"), "missing member fn decl: {result:?}");
+        assert!(
+            names.contains(&"operator()"),
+            "missing operator overload decl: {result:?}"
+        );
+
+        // Out-of-class method definitions (qualified). Constructor +
+        // destructor + regular method all reuse the same simple name
+        // ("TokenStore", "~TokenStore", "verify") — the surface that
+        // matters is the qualified scope, which lives in chunk
+        // content / signature, not the symbol.
+        let verify_chunks: Vec<_> = result
+            .chunks
+            .iter()
+            .filter(|c| c.symbol == "verify")
+            .collect();
+        // Declaration in class body + qualified out-of-class definition.
+        assert!(
+            verify_chunks.len() >= 2,
+            "expected verify declaration + definition, got: {verify_chunks:?}"
+        );
+
+        // Destructor name captured with leading tilde.
+        assert!(
+            names.contains(&"~TokenStore"),
+            "missing destructor: {result:?}"
+        );
+
+        // Free templated function.
+        assert!(names.contains(&"clamp"), "missing template free fn: {result:?}");
+
+        // Kinds.
+        let token_store_class = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "TokenStore" && c.kind == ChunkKind::Class)
+            .expect("TokenStore class chunk missing");
+        assert!(
+            token_store_class.doc_comment.contains("Verifies issued tokens"),
+            "missing // doc on class: {token_store_class:?}"
+        );
+
+        let status = result.chunks.iter().find(|c| c.symbol == "Status").unwrap();
+        assert_eq!(status.kind, ChunkKind::Enum);
+
+        let ns = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "pluck::auth")
+            .unwrap();
+        assert_eq!(ns.kind, ChunkKind::Module);
+
+        // Qualified method body callee: std::find captured as `find`.
+        let verify_def = verify_chunks
+            .iter()
+            .find(|c| c.content.contains("std::find"))
+            .expect("qualified verify definition missing");
+        assert!(
+            verify_def.callees.contains(&"find".to_string()),
+            "missing std::find callee: {:?}",
+            verify_def.callees
+        );
+
+        // Imports.
+        assert!(
+            result.imports.iter().any(|i| i.contains("vector")),
+            "missing <vector> include: {:?}",
+            result.imports
+        );
+        assert!(
+            result.imports.iter().any(|i| i == "session.h"),
+            "missing session.h include: {:?}",
+            result.imports
+        );
+    }
+
+    #[test]
+    fn test_cpp_realistic_header_fixture() {
+        // Realistic C++ header: nested namespace, multiple classes with
+        // ctor/dtor/method/operator, free template, scoped enum,
+        // forward decl. Pays one slice of v0.5 fixtures debt inline.
+        let src = r#"
+#pragma once
+
+#include <memory>
+#include <string>
+#include "result.h"
+
+namespace pluck::store {
+
+class Session;
+
+enum class Tier {
+    Free,
+    Pro,
+    Enterprise,
+};
+
+class SessionRegistry {
+public:
+    SessionRegistry();
+    ~SessionRegistry();
+
+    std::shared_ptr<Session> create(const std::string &id, Tier tier);
+    bool release(const std::string &id);
+
+    std::size_t size() const noexcept;
+
+    SessionRegistry(const SessionRegistry &) = delete;
+    SessionRegistry &operator=(const SessionRegistry &) = delete;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+template <typename T>
+class Slot {
+public:
+    explicit Slot(T value) : value_(std::move(value)) {}
+    const T &get() const noexcept { return value_; }
+private:
+    T value_;
+};
+
+template <typename Fn>
+auto guard(Fn &&fn) -> decltype(fn()) {
+    return fn();
+}
+
+}  // namespace pluck::store
+"#;
+        let result = chunk_source_with_meta(src, Language::Cpp).unwrap();
+        assert!(!result.parse_errors, "C++ parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        // Nested namespace.
+        assert!(names.contains(&"pluck::store"));
+
+        // Forward class decl + full class decl.
+        assert!(names.contains(&"Session"), "forward class decl missing: {result:?}");
+        assert!(names.contains(&"SessionRegistry"));
+
+        // Scoped enum.
+        assert!(names.contains(&"Tier"));
+
+        // Member decls: ctor / dtor / methods.
+        assert!(names.contains(&"create"), "missing member fn create: {result:?}");
+        assert!(names.contains(&"release"));
+        assert!(names.contains(&"size"));
+        assert!(
+            names.contains(&"~SessionRegistry"),
+            "missing destructor: {result:?}"
+        );
+        // operator= overload.
+        assert!(
+            names.contains(&"operator="),
+            "missing assignment operator: {result:?}"
+        );
+
+        // Templated class + templated free function.
+        assert!(names.contains(&"Slot"));
+        assert!(names.contains(&"guard"));
+
+        // Doc-class flag: SessionRegistry chunk content should include
+        // the deleted-copy-ctor lines (the chunker captures the whole
+        // class body).
+        let registry = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "SessionRegistry" && c.kind == ChunkKind::Class)
+            .expect("SessionRegistry class chunk missing");
+        assert!(
+            registry.content.contains("= delete"),
+            "registry chunk should include deleted ctor lines: {registry:?}"
+        );
+
+        // Imports.
+        assert!(result.imports.iter().any(|i| i.contains("memory")));
+        assert!(result.imports.iter().any(|i| i.contains("string")));
+        assert!(result.imports.iter().any(|i| i == "result.h"));
     }
 
     // ── C ─────────────────────────────────────────────────────────────────

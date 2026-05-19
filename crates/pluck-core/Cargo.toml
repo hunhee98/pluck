@@ -22,6 +22,7 @@ tree-sitter-kotlin-ng.workspace = true
 tree-sitter-sequel.workspace = true
 tree-sitter-hcl.workspace = true
 tree-sitter-c.workspace = true
+tree-sitter-cpp.workspace = true
 tree-sitter-html.workspace = true
 tree-sitter-css.workspace = true
 tree-sitter-scss.workspace = true
