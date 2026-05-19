@@ -218,6 +218,15 @@ Make large repos feel instant after the first index.
 
 - [ ] mmap-persistent on-disk index (warm-start cost: ~5 s → ~10 ms).
 - [ ] Index schema versioning + automatic rebuild signal.
+- [ ] Staleness signal on `pluck.search` / `peek` / `symbol` / `expand`:
+      per-chunk `stale: bool` + `index_age_ms` derived from
+      mtime-vs-`indexed_at` comparison, so the agent knows when to
+      fall back to `pluck.read` for fresh content. Flag-only — no
+      synchronous re-index on the read path, to preserve the
+      "fast indexed search" semantic. `--raw` mode suppresses both
+      fields to keep byte-equivalent output. Trust precondition for
+      being the default retrieval layer; pairs with the
+      schema-versioning item above.
 - [ ] Incremental embedding re-encode for changed chunks only.
 - [ ] Memory and disk usage caps.
 - [ ] `.pluckignore`, symlink-loop guard, and huge-file policy.
@@ -260,6 +269,17 @@ Turn retrieval into workflow memory and meet agents where users already work.
 - [ ] `pluck.plan` v2 — cheapest-path orchestrator: returns an ordered call
       sequence (e.g., grep → outline → symbol for body X) with per-step
       token estimates, not just a list of candidate files.
+- [ ] `pluck.grep` v2 — enclosing-context responses: each hit returns
+      the enclosing chunk (`symbol` / `kind` / `signature` + a small
+      snippet window around the match) and dedups hits inside the same
+      chunk into one entry with a `match_lines` array. Includes a
+      string-literal-vs-identifier flag from the parse tree so log /
+      regex / format-string matches are distinguishable from real code
+      matches. Default sort is by enclosing-chunk `kind` (code-first),
+      lossless — never filters. `--raw` mode suppresses enclosing /
+      category / sort to preserve rg-byte-equivalent output. Direct
+      attack on the grep→read roundtrip that is the highest-frequency
+      token-waste pattern.
 - [ ] Session-graph ranking: opt-in personalized PageRank with `acted_on`
       seeds.
 - [ ] Aider hook / loader.
