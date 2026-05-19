@@ -22,8 +22,9 @@ Keyword search. Wraps ripgrep — every flag passes through.
 
 | Addition over plain rg | |
 |------------------------|---|
-| Semantic boost | Hits ranked by combined BM25 + semantic similarity (only when called via `pluck.search`; `grep` is pure rg semantics). |
-| Output shape | Defaults to one match-line + ±2 context lines per hit, with `file:line:` prefix (`grep -n`). |
+| Literal by default | `--fixed-strings` is injected unless `args` contains a mode flag (`-e`, `--regexp`, `-P`, `--pcre2`, `-F`, `--fixed-strings`, `-f`, `--file`). Pattern is treated as a plain string, so code identifiers like `Foo::bar` or `obj.method(` work without escaping. |
+| Pre-validated `cwd` | If the supplied `cwd` does not exist, the call fails fast with a clear diagnostic instead of a misleading "is `rg` on PATH?" spawn error. |
+| Output shape | One match-line + ±2 context lines per hit, with `file:line:` prefix (`grep -n`). |
 
 ## `pluck.search`
 
