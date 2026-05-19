@@ -27,7 +27,7 @@ expand, session dedup).
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
-| v0.5 systems + JVM | 🟡 in progress — Kotlin, SQL, and HCL landed on main |
+| v0.5 systems + JVM | 🟡 in progress — Kotlin, SQL, HCL, and C landed on main |
 
 ---
 
@@ -182,7 +182,12 @@ released as `0.4.0`, not `0.3.1`.
 
 Close the next high-signal language gaps after Java and repo formats.
 
-- [ ] C chunker.
+- [x] C chunker: function definitions and forward declarations (incl.
+      pointer-return), struct / enum / union (standalone + typedef'd,
+      anonymous and named), function-pointer typedefs, object-like
+      and function-like macros (`#define`), and `#include` directives.
+      Inner names of typedef'd named enums / structs index alongside
+      the typedef name so grep by either surface lands.
 - [ ] C++ chunker.
 - [x] Kotlin chunker (Android + JVM).
 - [x] SQL chunker: CREATE TABLE / VIEW / INDEX / FUNCTION / TRIGGER

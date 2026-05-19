@@ -354,6 +354,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Go
         | Language::Java
         | Language::Kotlin
+        | Language::C
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
@@ -1555,6 +1556,236 @@ ALTER TABLE accounts ADD COLUMN locked_at TIMESTAMPTZ;
         // FK REFERENCES syntax parses cleanly (otherwise parse_errors
         // would already have caught it above).
         assert!(events_table.content.contains("REFERENCES accounts(id)"));
+    }
+
+    // ── C ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_c_function_struct_typedef_macro_include() {
+        assert_eq!(Language::from_extension("c"), Some(Language::C));
+        assert_eq!(Language::from_extension("h"), Some(Language::C));
+
+        let src = r#"
+#include <stdio.h>
+#include "config.h"
+
+// Maximum number of cached tokens.
+#define MAX_TOKENS 1024
+#define CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : (x) > (hi) ? (hi) : (x))
+
+// Anonymous struct typedef'd to a name.
+typedef struct {
+    int id;
+    char *email;
+} user_t;
+
+typedef enum auth_status {
+    AUTH_OK,
+    AUTH_EXPIRED,
+} auth_status_t;
+
+struct token_store {
+    user_t users[MAX_TOKENS];
+    int (*lookup)(const char *token);
+};
+
+union value {
+    int i;
+    char *s;
+};
+
+// Forward decl.
+static int normalize_email(char *addr);
+
+// Normalize email by lowercasing.
+int normalize_email(char *addr) {
+    return strlen(addr);
+}
+
+static inline int clamp_int(int v) {
+    return CLAMP(v, 0, 100);
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::C).unwrap();
+        assert!(!result.parse_errors, "C parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        // Macros.
+        assert!(names.contains(&"MAX_TOKENS"), "missing object-like macro: {result:?}");
+        assert!(names.contains(&"CLAMP"), "missing function-like macro: {result:?}");
+
+        // Types.
+        assert!(names.contains(&"user_t"), "missing typedef'd anonymous struct: {result:?}");
+        assert!(
+            names.contains(&"auth_status_t"),
+            "missing typedef'd enum (typedef name): {result:?}"
+        );
+        assert!(
+            names.contains(&"auth_status"),
+            "missing typedef'd enum (inner enum name): {result:?}"
+        );
+        assert!(names.contains(&"token_store"), "missing standalone struct: {result:?}");
+        assert!(names.contains(&"value"), "missing union: {result:?}");
+
+        // Functions (forward decl + definition share the same symbol;
+        // both chunks are kept since they live at different start bytes
+        // and document different surfaces — header decl vs body).
+        let normalize_chunks: Vec<_> = result
+            .chunks
+            .iter()
+            .filter(|c| c.symbol == "normalize_email")
+            .collect();
+        assert_eq!(
+            normalize_chunks.len(),
+            2,
+            "expected forward decl + definition chunks, got: {result:?}"
+        );
+
+        assert!(names.contains(&"clamp_int"), "missing static inline function: {result:?}");
+
+        // Kinds match the chunker's prefix mapping.
+        let max_tokens = result.chunks.iter().find(|c| c.symbol == "MAX_TOKENS").unwrap();
+        assert_eq!(max_tokens.kind, ChunkKind::Module);
+        let clamp = result.chunks.iter().find(|c| c.symbol == "CLAMP").unwrap();
+        assert_eq!(clamp.kind, ChunkKind::Function);
+        let token_store = result.chunks.iter().find(|c| c.symbol == "token_store").unwrap();
+        assert_eq!(token_store.kind, ChunkKind::Struct);
+        let union_v = result.chunks.iter().find(|c| c.symbol == "value").unwrap();
+        assert_eq!(union_v.kind, ChunkKind::Struct);
+        let auth_inner = result.chunks.iter().find(|c| c.symbol == "auth_status").unwrap();
+        assert_eq!(auth_inner.kind, ChunkKind::Enum);
+
+        // Doc comments lifted via `//`.
+        assert!(
+            max_tokens.doc_comment.contains("Maximum number of cached tokens"),
+            "missing // doc on macro: {max_tokens:?}"
+        );
+        let user_t = result.chunks.iter().find(|c| c.symbol == "user_t").unwrap();
+        assert!(
+            user_t.doc_comment.contains("Anonymous struct"),
+            "missing // doc on typedef: {user_t:?}"
+        );
+
+        let normalize_def = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "normalize_email" && c.content.contains('{'))
+            .expect("definition chunk missing");
+        assert!(
+            normalize_def.doc_comment.contains("Normalize email"),
+            "missing // doc on function definition: {normalize_def:?}"
+        );
+
+        // Callee captured.
+        assert!(
+            normalize_def.callees.contains(&"strlen".to_string()),
+            "missing strlen callee: {:?}",
+            normalize_def.callees
+        );
+
+        // Imports.
+        assert!(
+            result.imports.iter().any(|i| i.contains("stdio.h")),
+            "missing system include: {:?}",
+            result.imports
+        );
+        assert!(
+            result.imports.iter().any(|i| i == "config.h"),
+            "missing project include: {:?}",
+            result.imports
+        );
+    }
+
+    #[test]
+    fn test_c_realistic_header_fixture() {
+        // Header file shape: include guards, typedef function-pointer,
+        // multiple struct typedefs, extern function declarations, an
+        // inline static helper. Pays one slice of the v0.5
+        // "Per-language real-world fixtures" debt.
+        let src = r#"
+#ifndef PLUCK_AUTH_H
+#define PLUCK_AUTH_H
+
+#include <stddef.h>
+#include "common.h"
+
+typedef int (*auth_callback)(const char *token, void *ctx);
+
+typedef struct auth_session {
+    char *id;
+    size_t refcount;
+    auth_callback on_expire;
+} auth_session_t;
+
+typedef enum {
+    AUTH_OK = 0,
+    AUTH_DENIED = 1,
+    AUTH_EXPIRED = 2,
+} auth_result_t;
+
+extern auth_session_t *auth_session_create(const char *id);
+extern void auth_session_release(auth_session_t *session);
+
+static inline int auth_result_ok(auth_result_t r) {
+    return r == AUTH_OK;
+}
+
+#endif /* PLUCK_AUTH_H */
+"#;
+        let result = chunk_source_with_meta(src, Language::C).unwrap();
+        assert!(!result.parse_errors, "C parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        // Include-guard macro.
+        assert!(names.contains(&"PLUCK_AUTH_H"), "missing guard macro: {result:?}");
+
+        // Typedefs.
+        assert!(names.contains(&"auth_callback"), "missing fn-pointer typedef: {result:?}");
+        assert!(
+            names.contains(&"auth_session_t"),
+            "missing struct typedef name: {result:?}"
+        );
+        assert!(
+            names.contains(&"auth_session"),
+            "missing inner struct name: {result:?}"
+        );
+        assert!(
+            names.contains(&"auth_result_t"),
+            "missing anonymous enum typedef name: {result:?}"
+        );
+
+        // Extern function declarations.
+        assert!(
+            names.contains(&"auth_session_create"),
+            "missing extern decl: {result:?}"
+        );
+        assert!(
+            names.contains(&"auth_session_release"),
+            "missing extern decl: {result:?}"
+        );
+
+        // Inline function.
+        let helper = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "auth_result_ok")
+            .expect("inline helper missing");
+        assert_eq!(helper.kind, ChunkKind::Function);
+        assert!(helper.signature.contains("static inline"));
+
+        // Imports.
+        assert!(
+            result.imports.iter().any(|i| i.contains("stddef.h")),
+            "missing stddef include: {:?}",
+            result.imports
+        );
+        assert!(
+            result.imports.iter().any(|i| i == "common.h"),
+            "missing common.h include: {:?}",
+            result.imports
+        );
     }
 
     // ── HCL ───────────────────────────────────────────────────────────────
