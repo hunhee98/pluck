@@ -27,7 +27,7 @@ expand, session dedup).
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
-| v0.5 systems + JVM | 🟡 in progress — Kotlin, SQL, and HCL landed on main |
+| v0.5 systems + JVM | 🟡 chunker wave complete — Kotlin, SQL, HCL, C, and C++ landed on main; fixtures consolidation + NDCG breakdown remain |
 
 ---
 
@@ -182,8 +182,19 @@ released as `0.4.0`, not `0.3.1`.
 
 Close the next high-signal language gaps after Java and repo formats.
 
-- [ ] C chunker.
-- [ ] C++ chunker.
+- [x] C chunker: function definitions and forward declarations (incl.
+      pointer-return), struct / enum / union (standalone + typedef'd,
+      anonymous and named), function-pointer typedefs, object-like
+      and function-like macros (`#define`), and `#include` directives.
+      Inner names of typedef'd named enums / structs index alongside
+      the typedef name so grep by either surface lands.
+- [x] C++ chunker: namespace (single + nested), class / struct /
+      enum (incl. `enum class`) / union, templated class and free
+      function, out-of-class member impls via `qualified_identifier`,
+      in-class member declarations (regular method, destructor,
+      operator overload), `= delete` / `= default` special members,
+      value / pointer / reference return variants. C-style typedefs,
+      macros, and `#include` directives share patterns with C.
 - [x] Kotlin chunker (Android + JVM).
 - [x] SQL chunker: CREATE TABLE / VIEW / INDEX / FUNCTION / TRIGGER
       and ALTER TABLE migrations. CREATE PROCEDURE not supported —
