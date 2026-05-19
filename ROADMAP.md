@@ -27,7 +27,7 @@ expand, session dedup).
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
-| v0.5 systems + JVM | 🟡 in progress — Kotlin and SQL landed on main |
+| v0.5 systems + JVM | 🟡 in progress — Kotlin, SQL, and HCL landed on main |
 
 ---
 
@@ -189,7 +189,12 @@ Close the next high-signal language gaps after Java and repo formats.
       and ALTER TABLE migrations. CREATE PROCEDURE not supported —
       tree-sitter-sequel grammar limitation; waits on upstream fix or
       parser swap.
-- [ ] Terraform / HCL chunker: resources, data sources, modules, variables.
+- [x] Terraform / HCL chunker: resource / data / module / variable /
+      output / provider / locals / terraform blocks, plus nested
+      blocks (backend / lifecycle / required_providers / dynamic).
+      Uniform Module kind; dotted symbols matching HCL reference
+      syntax (`resource.aws_s3_bucket.main`, `variable.region`,
+      `data.aws_caller_identity.current`).
 - [ ] Per-language real-world fixtures for C, C++, Kotlin, SQL, and HCL.
 - [ ] Recall / NDCG breakdown includes every v0.5 language where labeled data
       exists.

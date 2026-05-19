@@ -357,6 +357,10 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
         Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
+        Language::Hcl => line
+            .strip_prefix("//")
+            .or_else(|| line.strip_prefix('#'))
+            .map(|s| s.trim().to_string()),
         Language::Html => line
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
@@ -449,6 +453,10 @@ fn normalize_symbol(lang: Language, raw_symbol: &str, content: &str) -> String {
 
     if matches!(lang, Language::Markdown | Language::Mdx) {
         return normalize_markdown_symbol(raw_symbol, content);
+    }
+
+    if lang == Language::Hcl {
+        return normalize_hcl_symbol(content);
     }
 
     if lang != Language::Html {
@@ -614,6 +622,35 @@ fn normalize_markdown_symbol(raw_symbol: &str, content: &str) -> String {
         .or_else(|| markdown_heading_text(raw_symbol))
         .or_else(|| markdown_heading_text(content))
         .unwrap_or_else(|| collapse_ascii_ws(raw_symbol.trim()))
+}
+
+/// HCL chunks become dotted symbols composed from the block header
+/// line: `resource "aws_s3_bucket" "main" { ... }` → `resource.aws_s3_bucket.main`;
+/// `variable "region" { ... }` → `variable.region`; bare-block forms
+/// like `terraform { ... }` or `locals { ... }` collapse to just the
+/// block type. This matches how HCL itself references the same objects
+/// (e.g., `aws_s3_bucket.main.arn`, `var.region`).
+fn normalize_hcl_symbol(content: &str) -> String {
+    let header = content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim())
+        .unwrap_or("");
+    // Strip both braces and label-quotes per token so the multi-line
+    // form `resource "foo" "bar" {` and the one-liner `data "x" "y" {}`
+    // both collapse cleanly to `<type>.<label>.<label>`.
+    let parts: Vec<String> = header
+        .split_whitespace()
+        .map(|p| {
+            p.trim_matches(|c: char| c == '"' || c == '{' || c == '}')
+                .to_string()
+        })
+        .filter(|p| !p.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return content.lines().next().unwrap_or("").to_string();
+    }
+    parts.join(".")
 }
 
 fn markdown_signature(content: &str) -> String {
@@ -1518,6 +1555,231 @@ ALTER TABLE accounts ADD COLUMN locked_at TIMESTAMPTZ;
         // FK REFERENCES syntax parses cleanly (otherwise parse_errors
         // would already have caught it above).
         assert!(events_table.content.contains("REFERENCES accounts(id)"));
+    }
+
+    // ── HCL ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_hcl_terraform_block_types() {
+        assert_eq!(Language::from_extension("tf"), Some(Language::Hcl));
+        assert_eq!(Language::from_extension("tfvars"), Some(Language::Hcl));
+        assert_eq!(Language::from_extension("hcl"), Some(Language::Hcl));
+
+        let src = r#"
+# main.tf - example
+terraform {
+  required_version = ">= 1.5"
+}
+
+provider "aws" {
+  region = var.region
+}
+
+# Region to deploy into.
+variable "region" {
+  type    = string
+  default = "us-east-1"
+}
+
+locals {
+  tags = { Env = "prod" }
+}
+
+data "aws_caller_identity" "current" {}
+
+// S3 bucket for app state.
+resource "aws_s3_bucket" "main" {
+  bucket = "my-bucket"
+  tags   = merge(local.tags, { Owner = data.aws_caller_identity.current.arn })
+}
+
+module "vpc" {
+  source = "terraform-aws-modules/vpc/aws"
+}
+
+output "bucket_arn" {
+  value = aws_s3_bucket.main.arn
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Hcl).unwrap();
+        assert!(!result.parse_errors, "HCL parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&"terraform"), "missing terraform: {result:?}");
+        assert!(names.contains(&"provider.aws"), "missing provider: {result:?}");
+        assert!(
+            names.contains(&"variable.region"),
+            "missing variable: {result:?}"
+        );
+        assert!(names.contains(&"locals"), "missing locals: {result:?}");
+        assert!(
+            names.contains(&"data.aws_caller_identity.current"),
+            "missing data source: {result:?}"
+        );
+        assert!(
+            names.contains(&"resource.aws_s3_bucket.main"),
+            "missing resource: {result:?}"
+        );
+        assert!(names.contains(&"module.vpc"), "missing module: {result:?}");
+        assert!(
+            names.contains(&"output.bucket_arn"),
+            "missing output: {result:?}"
+        );
+
+        // All HCL chunks are Module kind; discrimination lives in the
+        // dotted symbol prefix.
+        for chunk in &result.chunks {
+            assert_eq!(
+                chunk.kind,
+                ChunkKind::Module,
+                "expected Module kind for {chunk:?}"
+            );
+        }
+
+        // -- and // doc comments both lift onto the directly-following block.
+        let resource = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "resource.aws_s3_bucket.main")
+            .unwrap();
+        assert!(
+            resource.doc_comment.contains("S3 bucket for app state"),
+            "missing // doc comment: {resource:?}"
+        );
+
+        let var_region = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "variable.region")
+            .unwrap();
+        assert!(
+            var_region.doc_comment.contains("Region to deploy"),
+            "missing # doc comment: {var_region:?}"
+        );
+
+        // Function callees captured from inline expressions inside
+        // attribute values.
+        assert!(
+            resource.callees.contains(&"merge".to_string()),
+            "missing merge callee: {:?}",
+            resource.callees
+        );
+    }
+
+    #[test]
+    fn test_hcl_terraform_realistic_fixture() {
+        // Realistic Terraform shape: required_providers + backend nested
+        // inside terraform, lifecycle nested inside a resource,
+        // jsonencode + interpolation in attributes. Pays one slice of
+        // the v0.5 "Per-language real-world fixtures" debt inline.
+        let src = r#"
+terraform {
+  required_version = ">= 1.5"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+  backend "s3" {
+    bucket = "tfstate-app"
+    key    = "envs/prod/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
+# Shared tag map.
+locals {
+  common_tags = {
+    Project   = "app"
+    ManagedBy = "terraform"
+  }
+}
+
+# Persistent log storage.
+resource "aws_s3_bucket" "logs" {
+  bucket = "${var.env}-app-logs"
+  tags   = local.common_tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_iam_role" "app" {
+  name = "${var.env}-app-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+
+  tags = local.common_tags
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Hcl).unwrap();
+        assert!(!result.parse_errors, "HCL parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        // Top-level blocks captured.
+        assert!(names.contains(&"terraform"));
+        assert!(names.contains(&"locals"));
+        assert!(names.contains(&"resource.aws_s3_bucket.logs"));
+        assert!(names.contains(&"resource.aws_iam_role.app"));
+
+        // Nested blocks ALSO captured so agents can search them
+        // independently (e.g., grep for "backend" finds the s3 backend).
+        assert!(
+            names.iter().any(|n| n == &"backend.s3"),
+            "expected nested backend.s3 chunk: {result:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == &"lifecycle"),
+            "expected nested lifecycle chunk: {result:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == &"required_providers"),
+            "expected nested required_providers chunk: {result:?}"
+        );
+
+        // Doc comments lift onto directly-following blocks.
+        let logs = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "resource.aws_s3_bucket.logs")
+            .unwrap();
+        assert!(
+            logs.doc_comment.contains("Persistent log storage"),
+            "missing # doc on logs bucket: {logs:?}"
+        );
+
+        let local_tags = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "locals")
+            .unwrap();
+        assert!(
+            local_tags.doc_comment.contains("Shared tag map"),
+            "missing # doc on locals: {local_tags:?}"
+        );
+
+        // jsonencode pulled out as a callee on the IAM role chunk.
+        let iam = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "resource.aws_iam_role.app")
+            .unwrap();
+        assert!(
+            iam.callees.contains(&"jsonencode".to_string()),
+            "missing jsonencode callee: {:?}",
+            iam.callees
+        );
     }
 
     // ── HTML ──────────────────────────────────────────────────────────────
