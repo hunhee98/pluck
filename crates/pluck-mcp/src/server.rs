@@ -29,7 +29,7 @@ use pluck_core::semantic::{selected_model_id, StaticEncoder};
 use pluck_core::watcher::{spawn_watcher, WatcherHandle, DEFAULT_DEBOUNCE};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerInfo},
+    model::{ProtocolVersion, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use serde::Deserialize;
@@ -183,6 +183,26 @@ fn normalize_path(p: &Path) -> PathBuf {
         }
     }
     out
+}
+
+fn configured_protocol_version() -> ProtocolVersion {
+    protocol_version_from_env(std::env::var("PLUCK_MCP_PROTOCOL_VERSION").ok().as_deref())
+}
+
+fn protocol_version_from_env(value: Option<&str>) -> ProtocolVersion {
+    match value {
+        Some("2025-11-25") | None => ProtocolVersion::V_2025_11_25,
+        Some("2025-06-18") => ProtocolVersion::V_2025_06_18,
+        Some("2025-03-26") => ProtocolVersion::V_2025_03_26,
+        Some("2024-11-05") => ProtocolVersion::V_2024_11_05,
+        Some(other) => {
+            tracing::warn!(
+                version = other,
+                "unsupported PLUCK_MCP_PROTOCOL_VERSION; using 2025-11-25"
+            );
+            ProtocolVersion::V_2025_11_25
+        }
+    }
 }
 
 // ── Tool parameter schemas ──────────────────────────────────────────────────
@@ -986,12 +1006,14 @@ impl PluckServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for PluckServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "pluck — token-efficient code reading. Prefer pluck.read/search/grep \
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(configured_protocol_version())
+            .with_instructions(
+                "pluck — token-efficient code reading. Prefer pluck.read/search/grep \
                  over Bash cat/grep/rg whenever the target is inside the indexed repo. \
                  All pluck tools have a --raw or equivalent fallback that matches \
                  cat/grep byte-for-byte if you need exact parity.",
-        )
+            )
     }
 }
 
@@ -1193,6 +1215,38 @@ mod tests {
         assert_eq!(callee_leaf("db.user.findOne"), "findOne");
         assert_eq!(callee_leaf("Logger::new"), "new");
         assert_eq!(callee_leaf("std::collections::HashMap::new"), "new");
+    }
+
+    #[test]
+    fn protocol_version_env_supports_compatibility_pins() {
+        assert_eq!(
+            protocol_version_from_env(None),
+            ProtocolVersion::V_2025_11_25
+        );
+        assert_eq!(
+            protocol_version_from_env(Some("2025-11-25")),
+            ProtocolVersion::V_2025_11_25
+        );
+        assert_eq!(
+            protocol_version_from_env(Some("2025-06-18")),
+            ProtocolVersion::V_2025_06_18
+        );
+        assert_eq!(
+            protocol_version_from_env(Some("2025-03-26")),
+            ProtocolVersion::V_2025_03_26
+        );
+        assert_eq!(
+            protocol_version_from_env(Some("2024-11-05")),
+            ProtocolVersion::V_2024_11_05
+        );
+    }
+
+    #[test]
+    fn protocol_version_env_rejects_unknown_values_closed() {
+        assert_eq!(
+            protocol_version_from_env(Some("2099-01-01")),
+            ProtocolVersion::V_2025_11_25
+        );
     }
 
     #[tokio::test]

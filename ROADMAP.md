@@ -26,7 +26,8 @@ expand, session dedup).
 | CI + release gates | ✅ shipped — PR test/bench artifacts, release regression gate |
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
-| v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, agent install, TSX fixes landed on main |
+| v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
+| v0.5 systems + JVM | 🟡 in progress — Kotlin, SQL, and HCL landed on main |
 
 ---
 
@@ -146,8 +147,12 @@ released as `0.4.0`, not `0.3.1`.
 
 - [x] Java chunker: class, interface, record, annotation type, enum, method,
       constructor, imports, and direct callees.
-- [x] Universal agent install prompt: unknown MCP agents can self-configure
-      pluck with the strongest available allowlist / hook / rule layer.
+- [x] Universal all-in-one agent setup prompt: unknown MCP agents can install
+      pluck, register the MCP server, and apply the strongest available
+      pluck-first retrieval layer.
+- [x] Official Claude Code / Codex / Cursor setup guidance: project-scoped MCP
+      registration, permission / hook / rule / `AGENTS.md` layers, and
+      verification steps documented in README and `docs/AGENT_INSTALL.md`.
 - [x] HTML chunker: semantic elements, component-ish blocks, script/style
       sections.
 - [x] TSX parser correctness: `.tsx` uses the TSX grammar, parse warnings name
@@ -160,6 +165,9 @@ released as `0.4.0`, not `0.3.1`.
 - [ ] Chunker accuracy fixtures for all v0.4 formats.
 - [ ] Regression-gate metric for "format chunk recovery" so coverage does not
       silently shrink.
+- [ ] Outline emits top-level side-effect chunks (HTTP interceptors,
+      route / middleware registration, module-level initializers) so common
+      library setup is visible without reading the full file.
 - [ ] Path-qualifier in `pluck.peek` / `pluck.symbol`
       (`tokio/runtime/spawn` as a path filter).
 - [ ] Display path normalization (relative to canonicalized repo root, not
@@ -176,9 +184,17 @@ Close the next high-signal language gaps after Java and repo formats.
 
 - [ ] C chunker.
 - [ ] C++ chunker.
-- [ ] Kotlin chunker (Android + JVM).
-- [ ] SQL chunker: statements, views, functions/procedures, migrations.
-- [ ] Terraform / HCL chunker: resources, data sources, modules, variables.
+- [x] Kotlin chunker (Android + JVM).
+- [x] SQL chunker: CREATE TABLE / VIEW / INDEX / FUNCTION / TRIGGER
+      and ALTER TABLE migrations. CREATE PROCEDURE not supported —
+      tree-sitter-sequel grammar limitation; waits on upstream fix or
+      parser swap.
+- [x] Terraform / HCL chunker: resource / data / module / variable /
+      output / provider / locals / terraform blocks, plus nested
+      blocks (backend / lifecycle / required_providers / dynamic).
+      Uniform Module kind; dotted symbols matching HCL reference
+      syntax (`resource.aws_s3_bucket.main`, `variable.region`,
+      `data.aws_caller_identity.current`).
 - [ ] Per-language real-world fixtures for C, C++, Kotlin, SQL, and HCL.
 - [ ] Recall / NDCG breakdown includes every v0.5 language where labeled data
       exists.
@@ -207,6 +223,15 @@ Make large repos feel instant after the first index.
 
 - [ ] mmap-persistent on-disk index (warm-start cost: ~5 s → ~10 ms).
 - [ ] Index schema versioning + automatic rebuild signal.
+- [ ] Staleness signal on `pluck.search` / `peek` / `symbol` / `expand`:
+      per-chunk `stale: bool` + `index_age_ms` derived from
+      mtime-vs-`indexed_at` comparison, so the agent knows when to
+      fall back to `pluck.read` for fresh content. Flag-only — no
+      synchronous re-index on the read path, to preserve the
+      "fast indexed search" semantic. `--raw` mode suppresses both
+      fields to keep byte-equivalent output. Trust precondition for
+      being the default retrieval layer; pairs with the
+      schema-versioning item above.
 - [ ] Incremental embedding re-encode for changed chunks only.
 - [ ] Memory and disk usage caps.
 - [ ] `.pluckignore`, symlink-loop guard, and huge-file policy.
@@ -221,11 +246,18 @@ Measure whether agents actually choose pluck over fallback tools.
 - [x] `pluck init` — install-time replacement of retrieval channel across
       Claude Code / Codex / Cursor: MCP + hooks + permissions + rule files
       (opt-in `--mode aggressive` for Claude).
+- [x] Agent setup docs distinguish installation from pluck-first behavior
+      while keeping the user-facing prompt copy-pastable as one block.
 - [ ] Adoption-rate counter: pluck calls vs. bash/read/grep fallback per
       session.
 - [ ] Tool-description A/B harness.
 - [ ] Real LLM-in-loop bench: Claude / Codex / Gemini on fixed tasks, with and
-      without pluck active.
+      without pluck active. Gold metric: total conversation tokens to task
+      completion; per-call token counts secondary. Prerequisite for changing
+      tool defaults (e.g., compact-first `pluck.search`).
+- [ ] Per-call cost preview in tool responses: outline / search / grep return
+      a "this view = N tokens; expanded = M tokens" line so the agent sees
+      the price of each shape and gravitates to the cheap one.
 - [ ] Korean / Japanese / Chinese tool descriptions.
 - [ ] Public benchmark dashboard fed by nightly runs.
 
@@ -239,6 +271,20 @@ Turn retrieval into workflow memory and meet agents where users already work.
 - [ ] `pluck.diff`: change-aware retrieval for current branch / PR.
 - [ ] `pluck.history`: search relevant prior changes.
 - [ ] `pluck.profile`: explain token, latency, and retrieval behavior.
+- [ ] `pluck.plan` v2 — cheapest-path orchestrator: returns an ordered call
+      sequence (e.g., grep → outline → symbol for body X) with per-step
+      token estimates, not just a list of candidate files.
+- [ ] `pluck.grep` v2 — enclosing-context responses: each hit returns
+      the enclosing chunk (`symbol` / `kind` / `signature` + a small
+      snippet window around the match) and dedups hits inside the same
+      chunk into one entry with a `match_lines` array. Includes a
+      string-literal-vs-identifier flag from the parse tree so log /
+      regex / format-string matches are distinguishable from real code
+      matches. Default sort is by enclosing-chunk `kind` (code-first),
+      lossless — never filters. `--raw` mode suppresses enclosing /
+      category / sort to preserve rg-byte-equivalent output. Direct
+      attack on the grep→read roundtrip that is the highest-frequency
+      token-waste pattern.
 - [ ] Session-graph ranking: opt-in personalized PageRank with `acted_on`
       seeds.
 - [ ] Aider hook / loader.
@@ -256,8 +302,9 @@ read/search layer for coding agents.
 
 - [ ] Stable MCP tool contract and compatibility notes.
 - [ ] Stable CLI output contracts for scripted use.
-- [ ] Install docs for Claude Code, Codex, Cursor, Aider, OpenHands, Cline, and
-      Continue.
+- [ ] Install docs beyond the first supported agents: Aider, OpenHands, Cline,
+      Continue, and any other MCP-capable agent with stable official config
+      surfaces.
 - [ ] Reproducible benchmark dashboard with release-pinned artifacts.
 - [ ] Release checklist covers crates.io, GitHub Release, Homebrew, README,
       roadmap image, and benchmark baseline updates.

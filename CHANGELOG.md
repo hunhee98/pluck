@@ -45,9 +45,19 @@ Versioning follows [SemVer](https://semver.org).
 
 ### Fixed
 
+- `pluckd` can pin its advertised MCP protocol with
+  `PLUCK_MCP_PROTOCOL_VERSION` for clients that have not caught up to the
+  current `2025-11-25` protocol, while keeping the default protocol unchanged.
 - TSX files now parse with tree-sitter's TSX grammar instead of the plain
   TypeScript grammar. Parse warnings include the repo-relative path, and index
   summaries count files with parse errors.
+
+- Release workflow now owns GitHub Release creation and binary asset
+  upload only; crates.io publishing stays in `scripts/release.sh` to
+  avoid duplicate publish attempts after a tag push.
+- Release workflow now configures target OpenSSL for
+  `aarch64-unknown-linux-gnu` cross builds so the ARM Linux tarball
+  remains part of the release asset set.
 
 ## [0.3.0] — 2026-05-17
 

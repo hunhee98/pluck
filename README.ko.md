@@ -39,19 +39,55 @@ pluck 사용:  pluck.plan "auth-token 만료 버그 수정" → 다음 3-5 retri
 
 `pluck`은 AI 코딩 에이전트의 기본 검색 도구로 사용되도록 만들어졌어요.
 
-### 1. 에이전트 설치 프롬프트 붙여 넣기
+### 1. 에이전트 설정 프롬프트 붙여 넣기
 
 ```text
-Install and configure pluck for this repo. Make pluck the default code
-retrieval layer: prefer mcp__pluck__read, mcp__pluck__search, mcp__pluck__grep,
-and the other mcp__pluck__* tools before cat, grep, rg, or built-in file reads.
-If pluck is missing, install pluck-mcp and pluck-cli. Register pluckd as an MCP
-server for this repo. Use the strongest setup your environment supports: MCP
-allowlist, tool permissions, hooks/command blockers, or project rules. Verify
-that a repo code search uses mcp__pluck__* before finishing.
+Install and configure pluck for this repo.
+
+Install / register:
+- If pluck is missing, install pluck-mcp and pluck-cli with Cargo or Homebrew.
+- Register pluckd as an MCP server named `pluck` for this repository.
+- Prefer project-scoped config when the agent supports it.
+- Preserve existing MCP servers, rules, hooks, permissions, and comments.
+
+To make pluck the first retrieval choice:
+- Use the strongest official mechanism this agent supports.
+- Claude Code: use project MCP config or
+  `claude mcp add --transport stdio --scope project pluck -- pluckd --repo <repo-root>`;
+  approve the `pluck` MCP server in settings/permissions when needed; add
+  durable instructions in `CLAUDE.md`; use PreToolUse hooks or permission
+  deny rules only when they can safely redirect repo-local cat/grep/rg/read
+  retrieval to mcp__pluck__* tools.
+- Codex: use `codex mcp add pluck -- pluckd --repo <repo-root>` or
+  `~/.codex/config.toml` / trusted project `.codex/config.toml`; add the
+  pluck-first retrieval policy to `AGENTS.md`.
+- Cursor: use project `.cursor/mcp.json`; add an always-applied Project Rule
+  in `.cursor/rules/` or an `AGENTS.md` instruction for the workspace.
+
+Pluck-first retrieval policy:
+- Use mcp__pluck__read before cat, head, tail, sed -n, or built-in file reads
+  for files inside the indexed repo.
+- Use mcp__pluck__search for conceptual code lookup.
+- Use mcp__pluck__grep before grep or rg for exact strings, regexes, TODOs,
+  and all textual matches inside the repo.
+- Use mcp__pluck__peek, mcp__pluck__symbol, mcp__pluck__expand,
+  mcp__pluck__impact, and mcp__pluck__deps for symbol shape, bodies, call
+  chains, refactor impact, and import relationships.
+- Use mcp__pluck__digest before pasting long cargo, npm, pytest, or GitHub
+  Actions logs into context.
+- Fall back to Bash or built-in reads only for binary files, paths outside the
+  repo, byte-exact shell pipelines, unsupported formats, or when pluck is
+  unavailable.
+
+Verify:
+- Restart or reload the agent if MCP changes require it.
+- Confirm the `pluck` MCP server is connected and mcp__pluck__* tools exist.
+- Run one repo code-search/read task and confirm the agent calls mcp__pluck__*
+  before Bash, grep/rg, cat, or built-in file reads.
+- Show the files changed and the verification result.
 ```
 
-안전 체크와 폴백 지시까지 포함한 더 강한 버전은
+안전 체크와 폴백 지시를 더 자세히 넣은 버전은
 [전체 에이전트 설치 프롬프트](docs/AGENT_INSTALL.md)를 쓰면 돼요.
 
 ### 2. 직접 설정하고 싶다면
