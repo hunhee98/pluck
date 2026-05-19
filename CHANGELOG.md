@@ -51,6 +51,16 @@ Versioning follows [SemVer](https://semver.org).
 - TSX files now parse with tree-sitter's TSX grammar instead of the plain
   TypeScript grammar. Parse warnings include the repo-relative path, and index
   summaries count files with parse errors.
+- `pluck.grep` now treats `pattern` as a literal string by default, matching
+  the tool's advertised "literal by default" semantics. ripgrep is invoked
+  with `--fixed-strings` unless the caller passes a mode flag (`-e`,
+  `--regexp`, `-P`, `--pcre2`, `-F`, `--fixed-strings`, `-f`, `--file`).
+  Identifiers containing regex metacharacters such as `Foo(` previously
+  failed with an unclosed-group parse error.
+- `pluck.grep` now pre-validates `cwd` and surfaces a clear "cwd does not
+  exist" diagnostic when the directory is missing, instead of propagating a
+  misleading "is `rg` on PATH?" spawn error (Unix OS error 2 / Windows OS
+  error 267).
 
 - Release workflow now owns GitHub Release creation and binary asset
   upload only; crates.io publishing stays in `scripts/release.sh` to

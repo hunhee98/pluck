@@ -459,8 +459,27 @@ impl PluckServer {
             Some(c) => self.resolve_in_repo(c)?,
             None => self.inner.repo_root.clone(),
         };
+        // ripgrep's spawn error if cwd doesn't exist is "is rg on PATH?"-shaped
+        // (OS error 2 on Unix, 267 on Windows) — pre-validate so the agent
+        // sees the real cause instead of a misleading PATH hint.
+        if !cwd.is_dir() {
+            return Err(McpError::invalid_params(
+                format!(
+                    "pluck.grep: cwd does not exist or is not a directory: {}",
+                    cwd.display()
+                ),
+                None,
+            ));
+        }
 
         let mut cmd = Shell::new("rg");
+        // The tool advertises literal-by-default semantics. ripgrep's
+        // default is regex, so pass --fixed-strings unless the caller has
+        // already chosen a pattern mode (regex via -e/--regexp/-P/--pcre2,
+        // or literal explicitly via -F/--fixed-strings).
+        if !pattern_mode_specified(&p.args) {
+            cmd.arg("--fixed-strings");
+        }
         cmd.arg(&p.pattern);
         for a in &p.args {
             cmd.arg(a);
@@ -1084,6 +1103,24 @@ fn dedup_keep_order(xs: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+/// True if the caller already chose a ripgrep pattern mode, so we leave
+/// it alone. Otherwise the grep handler injects `--fixed-strings` to
+/// honour the literal-by-default contract advertised by the tool.
+fn pattern_mode_specified(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        matches!(
+            a.as_str(),
+            "-F" | "--fixed-strings"
+                | "-e"
+                | "--regexp"
+                | "-P"
+                | "--pcre2"
+                | "-f"
+                | "--file"
+        )
+    })
 }
 
 fn render_full(hits: &[SearchHit]) -> String {
@@ -1834,5 +1871,103 @@ mod tests {
         assert!(res.is_err(), "unknown format must error");
         let msg = format!("{:?}", res.err().unwrap());
         assert!(msg.contains("unknown format"), "got: {msg}");
+    }
+
+    #[test]
+    fn pattern_mode_specified_detects_regex_and_literal_flags() {
+        let flags = [
+            ("-F", true),
+            ("--fixed-strings", true),
+            ("-e", true),
+            ("--regexp", true),
+            ("-P", true),
+            ("--pcre2", true),
+            ("-f", true),
+            ("--file", true),
+            ("-n", false),
+            ("--type", false),
+            ("-A", false),
+            ("--", false),
+        ];
+        for (flag, expected) in flags {
+            let args = vec![flag.to_string()];
+            assert_eq!(
+                pattern_mode_specified(&args),
+                expected,
+                "flag {flag} expected {expected}"
+            );
+        }
+        assert!(!pattern_mode_specified(&[]), "empty args must be false");
+    }
+
+    fn repo_root_for_tests() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    #[tokio::test]
+    async fn grep_rejects_missing_cwd_with_invalid_params() {
+        let server = PluckServer::new(repo_root_for_tests()).expect("server new");
+        let res = server
+            .grep(Parameters(GrepParams {
+                pattern: "anything".to_string(),
+                args: vec![],
+                cwd: Some("definitely-not-a-real-dir-xyzzy".to_string()),
+            }))
+            .await;
+        assert!(res.is_err(), "missing cwd must error");
+        let msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            msg.contains("cwd does not exist"),
+            "want explicit cwd diagnostic, got: {msg}"
+        );
+        assert!(
+            !msg.contains("is `rg` on PATH"),
+            "must not blame PATH for a missing cwd, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_pattern_is_literal_by_default() {
+        // The previous regex-by-default behavior would treat `MobMemory(`
+        // as an unclosed group and exit 2. With --fixed-strings injected,
+        // an unmatched literal pattern just returns empty (exit 1 -> Ok).
+        let server = PluckServer::new(repo_root_for_tests()).expect("server new");
+        let res = server
+            .grep(Parameters(GrepParams {
+                pattern: "definitely_not_a_real_symbol_xyzzy(".to_string(),
+                args: vec!["--no-messages".to_string()],
+                cwd: None,
+            }))
+            .await;
+        assert!(
+            res.is_ok(),
+            "literal pattern with metachars must not fail: {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grep_preserves_explicit_regex_via_dash_e() {
+        // Caller passing -e must keep regex semantics — we leave the
+        // pattern alone and let rg parse it. A bogus regex must still
+        // surface as exit-2 invalid_params, not be silenced by -F.
+        let server = PluckServer::new(repo_root_for_tests()).expect("server new");
+        let res = server
+            .grep(Parameters(GrepParams {
+                pattern: "ignored".to_string(),
+                args: vec!["-e".to_string(), "(unclosed".to_string()],
+                cwd: None,
+            }))
+            .await;
+        assert!(res.is_err(), "explicit bad regex must still error");
+        let msg = format!("{:?}", res.err().unwrap());
+        assert!(
+            msg.contains("regex parse error") || msg.contains("ripgrep exited 2"),
+            "want rg regex diagnostic, got: {msg}"
+        );
     }
 }
