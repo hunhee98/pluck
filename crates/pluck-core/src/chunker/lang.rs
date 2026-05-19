@@ -11,6 +11,7 @@ pub enum Lang {
     Go,
     Java,
     Kotlin,
+    Sql,
     Html,
     Css,
     Scss,
@@ -56,6 +57,7 @@ impl Lang {
             "go" => Some(Self::Go),
             "java" => Some(Self::Java),
             "kt" | "kts" => Some(Self::Kotlin),
+            "sql" | "ddl" | "dml" => Some(Self::Sql),
             "html" | "htm" => Some(Self::Html),
             "css" => Some(Self::Css),
             "scss" => Some(Self::Scss),
@@ -80,6 +82,7 @@ impl Lang {
             Self::Go => tree_sitter_go::LANGUAGE.into(),
             Self::Java => tree_sitter_java::LANGUAGE.into(),
             Self::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
+            Self::Sql => tree_sitter_sequel::LANGUAGE.into(),
             Self::Html => tree_sitter_html::LANGUAGE.into(),
             Self::Css => tree_sitter_css::LANGUAGE.into(),
             Self::Scss => tree_sitter_scss::language(),
@@ -100,6 +103,7 @@ impl Lang {
             Self::Go => include_str!("queries/go.scm"),
             Self::Java => include_str!("queries/java.scm"),
             Self::Kotlin => include_str!("queries/kotlin.scm"),
+            Self::Sql => include_str!("queries/sql.scm"),
             Self::Html => include_str!("queries/html.scm"),
             Self::Css => include_str!("queries/css.scm"),
             Self::Scss => include_str!("queries/scss.scm"),
@@ -120,6 +124,7 @@ impl Lang {
             Self::Go => include_str!("queries/callees/go.scm"),
             Self::Java => include_str!("queries/callees/java.scm"),
             Self::Kotlin => include_str!("queries/callees/kotlin.scm"),
+            Self::Sql => include_str!("queries/callees/sql.scm"),
             Self::Html => include_str!("queries/callees/html.scm"),
             Self::Css => include_str!("queries/callees/css.scm"),
             Self::Scss => include_str!("queries/callees/scss.scm"),
@@ -142,6 +147,7 @@ impl Lang {
             Self::Go => include_str!("queries/imports/go.scm"),
             Self::Java => include_str!("queries/imports/java.scm"),
             Self::Kotlin => include_str!("queries/imports/kotlin.scm"),
+            Self::Sql => include_str!("queries/imports/sql.scm"),
             Self::Html => include_str!("queries/imports/html.scm"),
             Self::Css => include_str!("queries/imports/css.scm"),
             Self::Scss => include_str!("queries/imports/scss.scm"),
@@ -205,6 +211,10 @@ impl Lang {
             Self::Kotlin => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Kotlin)).as_ref()
+            }
+            Self::Sql => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Sql)).as_ref()
             }
             Self::Html => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();

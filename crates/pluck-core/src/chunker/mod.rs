@@ -356,6 +356,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Kotlin
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
+        Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
         Language::Html => line
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
@@ -1292,6 +1293,231 @@ fun String.normalizeToken(): String = trim().lowercase()
             "missing import: {:?}",
             result.imports
         );
+    }
+
+    // ── SQL ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_sql_create_statements_and_alter() {
+        assert_eq!(Language::from_extension("sql"), Some(Language::Sql));
+        assert_eq!(Language::from_extension("ddl"), Some(Language::Sql));
+
+        // CREATE PROCEDURE is intentionally omitted — tree-sitter-sequel
+        // does not model it, so including it would dirty `parse_errors`.
+        let src = r#"
+-- Users table
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE
+);
+
+CREATE VIEW active_users AS
+SELECT * FROM users WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_users_email ON users(email);
+
+-- Normalize email addresses before lookup.
+CREATE OR REPLACE FUNCTION normalize_email(addr TEXT)
+RETURNS TEXT AS $$
+BEGIN
+    RETURN lower(trim(addr));
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER users_lowercase_email
+BEFORE INSERT ON users
+FOR EACH ROW
+EXECUTE FUNCTION normalize_email_trigger();
+
+ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+"#;
+        let result = chunk_source_with_meta(src, Language::Sql).unwrap();
+        assert!(!result.parse_errors, "SQL parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+
+        assert!(names.contains(&"users"), "missing CREATE TABLE: {result:?}");
+        assert!(
+            names.contains(&"active_users"),
+            "missing CREATE VIEW: {result:?}"
+        );
+        assert!(
+            names.contains(&"idx_users_email"),
+            "missing CREATE INDEX: {result:?}"
+        );
+        assert!(
+            names.contains(&"normalize_email"),
+            "missing CREATE FUNCTION: {result:?}"
+        );
+        assert!(
+            names.contains(&"users_lowercase_email"),
+            "missing CREATE TRIGGER: {result:?}"
+        );
+
+        // ALTER TABLE re-emits the targeted table as a module chunk so
+        // migration files surface the touched object even when the
+        // original CREATE TABLE lives in a different file.
+        let alter = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "users" && c.kind == ChunkKind::Module)
+            .expect("missing ALTER TABLE module chunk");
+        assert!(
+            alter.content.contains("ADD COLUMN created_at"),
+            "ALTER TABLE chunk content unexpected: {alter:?}"
+        );
+
+        let table = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "users" && c.kind == ChunkKind::Class)
+            .expect("users CREATE TABLE chunk missing");
+        assert!(
+            table.doc_comment.contains("Users table"),
+            "missing -- doc comment on CREATE TABLE: {table:?}"
+        );
+        assert!(table.content.contains("BIGSERIAL PRIMARY KEY"));
+
+        let func = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "normalize_email")
+            .expect("normalize_email function missing");
+        assert_eq!(func.kind, ChunkKind::Function);
+        assert!(
+            func.doc_comment.contains("Normalize email"),
+            "missing -- doc comment on CREATE FUNCTION: {func:?}"
+        );
+        assert!(
+            func.signature
+                .contains("CREATE OR REPLACE FUNCTION normalize_email"),
+            "function signature unexpected: {:?}",
+            func.signature
+        );
+        assert!(
+            func.callees.contains(&"lower".to_string()),
+            "missing PL/pgSQL callee `lower`: {:?}",
+            func.callees
+        );
+        assert!(
+            func.callees.contains(&"trim".to_string()),
+            "missing PL/pgSQL callee `trim`: {:?}",
+            func.callees
+        );
+
+        let trigger = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "users_lowercase_email")
+            .expect("trigger chunk missing");
+        assert_eq!(trigger.kind, ChunkKind::Function);
+        assert!(
+            trigger
+                .content
+                .contains("EXECUTE FUNCTION normalize_email_trigger"),
+            "trigger content unexpected: {trigger:?}"
+        );
+
+        let view = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "active_users")
+            .unwrap();
+        assert_eq!(view.kind, ChunkKind::Class);
+        assert!(view.content.contains("SELECT * FROM users"));
+
+        let index = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "idx_users_email")
+            .unwrap();
+        assert_eq!(index.kind, ChunkKind::Module);
+    }
+
+    #[test]
+    fn test_sql_migration_file_fixture() {
+        // Real-world migration file shape: file-header block comment,
+        // multiple CREATE TABLE / CREATE INDEX statements paired in the
+        // same file, FK REFERENCES, multiple ALTER TABLE statements.
+        // Pays one slice of the v0.4 chunker-fixtures debt by giving SQL
+        // a fixture-style assertion set, not just a minimal smoke test.
+        let src = r#"/*
+ * 0042_user_schema.sql
+ * Migration: add user table and supporting indexes.
+ */
+
+-- Core user account record.
+CREATE TABLE accounts (
+    id BIGSERIAL PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_accounts_email ON accounts(email);
+CREATE INDEX idx_accounts_created_at ON accounts(created_at);
+
+-- Audit trail keyed by account.
+CREATE TABLE account_events (
+    id BIGSERIAL PRIMARY KEY,
+    account_id BIGINT NOT NULL REFERENCES accounts(id),
+    event_type TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_account_events_account_id ON account_events(account_id);
+
+ALTER TABLE accounts ADD COLUMN deleted_at TIMESTAMPTZ;
+ALTER TABLE accounts ADD COLUMN locked_at TIMESTAMPTZ;
+"#;
+        let result = chunk_source_with_meta(src, Language::Sql).unwrap();
+        assert!(!result.parse_errors, "SQL parse errors: {result:?}");
+
+        let names: Vec<String> = result.chunks.iter().map(|c| c.symbol.clone()).collect();
+
+        // Every CREATE statement gets a chunk.
+        assert!(names.iter().any(|n| n == "accounts"));
+        assert!(names.iter().any(|n| n == "account_events"));
+        assert!(names.iter().any(|n| n == "idx_accounts_email"));
+        assert!(names.iter().any(|n| n == "idx_accounts_created_at"));
+        assert!(names.iter().any(|n| n == "idx_account_events_account_id"));
+
+        // Both ALTER TABLE statements emit module chunks on the same
+        // target table — neither swallows the other via dedup.
+        let alter_count = result
+            .chunks
+            .iter()
+            .filter(|c| c.symbol == "accounts" && c.kind == ChunkKind::Module)
+            .count();
+        assert_eq!(
+            alter_count, 2,
+            "expected 2 ALTER TABLE chunks, got chunks: {result:?}"
+        );
+
+        // -- doc comment lifted onto the directly-following CREATE TABLE,
+        // even with a file-header /* */ block earlier in the file.
+        let accounts_table = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "accounts" && c.kind == ChunkKind::Class)
+            .expect("accounts table chunk missing");
+        assert!(
+            accounts_table.doc_comment.contains("Core user account"),
+            "missing -- doc comment on accounts: {accounts_table:?}"
+        );
+
+        let events_table = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "account_events")
+            .expect("account_events table chunk missing");
+        assert!(
+            events_table.doc_comment.contains("Audit trail"),
+            "missing -- doc comment on account_events: {events_table:?}"
+        );
+
+        // FK REFERENCES syntax parses cleanly (otherwise parse_errors
+        // would already have caught it above).
+        assert!(events_table.content.contains("REFERENCES accounts(id)"));
     }
 
     // ── HTML ──────────────────────────────────────────────────────────────

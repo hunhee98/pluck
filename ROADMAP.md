@@ -27,7 +27,7 @@ expand, session dedup).
 | Plugin + release infra | ✅ shipped — Claude/Codex/Cursor pluck-first init + release gates |
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
-| v0.5 systems + JVM | 🟡 in progress — Kotlin landed on main |
+| v0.5 systems + JVM | 🟡 in progress — Kotlin and SQL landed on main |
 
 ---
 
@@ -185,7 +185,10 @@ Close the next high-signal language gaps after Java and repo formats.
 - [ ] C chunker.
 - [ ] C++ chunker.
 - [x] Kotlin chunker (Android + JVM).
-- [ ] SQL chunker: statements, views, functions/procedures, migrations.
+- [x] SQL chunker: CREATE TABLE / VIEW / INDEX / FUNCTION / TRIGGER
+      and ALTER TABLE migrations. CREATE PROCEDURE not supported —
+      tree-sitter-sequel grammar limitation; waits on upstream fix or
+      parser swap.
 - [ ] Terraform / HCL chunker: resources, data sources, modules, variables.
 - [ ] Per-language real-world fixtures for C, C++, Kotlin, SQL, and HCL.
 - [ ] Recall / NDCG breakdown includes every v0.5 language where labeled data
