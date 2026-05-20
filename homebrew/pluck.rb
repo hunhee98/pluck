@@ -1,10 +1,8 @@
 class Pluck < Formula
   desc "Fast and token-friendly code reading for AI coding agents"
   homepage "https://github.com/hunhee98/pluck"
-  url "https://github.com/hunhee98/pluck/archive/refs/tags/v0.1.0.tar.gz"
-  # Replace `sha256` with the real digest at release time:
-  #   shasum -a 256 v0.1.0.tar.gz
-  sha256 "REPLACE_ME_AT_RELEASE_TIME"
+  url "https://github.com/hunhee98/pluck/archive/refs/tags/v0.5.0.tar.gz"
+  sha256 "84527d179a28111749d463682a1e2b0d225501bd522c4ef0ce22c8258566449e"
   license "MIT"
   head "https://github.com/hunhee98/pluck.git", branch: "main"
 
@@ -18,9 +16,12 @@ class Pluck < Formula
   end
 
   test do
-    # Both binaries should at least run --version.
-    assert_match "pluck", shell_output("#{bin}/pluck --version")
-    assert_match "pluckd", shell_output("#{bin}/pluckd --version")
+    # Both binaries should report the installed version. The CLI
+    # binary prints its package name (`pluck-cli` / `pluck-mcp`),
+    # not its on-disk name (`pluck` / `pluckd`), so we assert on
+    # the version string instead.
+    assert_match version.to_s, shell_output("#{bin}/pluck --version")
+    assert_match version.to_s, shell_output("#{bin}/pluckd --version")
 
     # A tiny end-to-end: index this very dir, search for the help text,
     # confirm we get a hit.
