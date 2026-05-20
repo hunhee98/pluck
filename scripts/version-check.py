@@ -91,7 +91,14 @@ def check_cargo_lock(version: str) -> None:
 
 def check_changelog_release(version: str) -> None:
     changelog = read_text(ROOT / "CHANGELOG.md")
-    if not re.search(rf"^## \[{re.escape(version)}\]\b", changelog, re.MULTILINE):
+    # The closing `]` is followed by whitespace or end-of-line in the
+    # Keep-a-Changelog format ("## [0.5.0] — 2026-05-19"). The previous
+    # `\b` anchor never matched because `\b` needs a word/non-word
+    # transition and both `]` and ` ` are non-word — leaving the check
+    # silently broken for every release after the script landed.
+    if not re.search(
+        rf"^## \[{re.escape(version)}\](?:\s|$)", changelog, re.MULTILINE
+    ):
         fail(f"CHANGELOG.md is missing a ## [{version}] release section")
 
 
