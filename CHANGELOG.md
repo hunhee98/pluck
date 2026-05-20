@@ -6,16 +6,30 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-05-20
+
+### Added
+
+- `cargo clippy --workspace --all-targets -- -D warnings` is now a
+  required CI step on every PR and main push. Prevents the kind of
+  silent lint-debt accumulation surfaced for the first time by the
+  v0.5.0 `/release` pre-flight (3 warnings had been sitting under the
+  ungated radar; cleared in commit 4306c1e for v0.5.0).
+
 ### Fixed
 
-- Release workflow no longer blocks GitHub Release creation when the
-  `aarch64-unknown-linux-gnu` cross build fails. The target is marked
-  `continue-on-error: true` because Azure-hosted Ubuntu runners cannot
-  fetch arm64 apt indexes through the default mirror, breaking
-  `libssl-dev:arm64` install. Proper fix (ports.ubuntu.com sources or
-  `cross-rs/cross` Docker container) tracked for v0.5.x. Until then a
-  release ships with the three binaries that DO build (x86_64-darwin,
-  aarch64-darwin, x86_64-linux).
+- Release workflow now produces the `aarch64-unknown-linux-gnu`
+  binary tarball reliably. The previous setup ran
+  `apt-get install libssl-dev:arm64` against Azure-hosted Ubuntu
+  sources that do not publish arm64 indexes — every arm64 fetch was
+  `Ign`-ored and the install step exited 100. The build step now
+  pins the default sources to amd64 and adds arm64 sources from
+  `ports.ubuntu.com` (Canonical's arm64 archive) before installing
+  the cross toolchain. The `continue-on-error: true` workaround
+  added in v0.5.0's release prep is removed; the target is required
+  again. v0.5.0 shipped without this binary; from v0.5.1 onward all
+  four targets (x86_64-darwin, aarch64-darwin, x86_64-linux,
+  aarch64-linux) ride every release.
 
 ## [0.5.0] — 2026-05-19
 
@@ -235,7 +249,8 @@ Internal development cutline before the first crates.io publish.
 - CI workflows, Claude Code plugin manifest, CONTRIBUTING,
   CODE_OF_CONDUCT, GitHub issue + PR templates.
 
-[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/hunhee98/pluck/releases/tag/v0.5.1
 [0.5.0]: https://github.com/hunhee98/pluck/releases/tag/v0.5.0
 [0.3.0]: https://github.com/hunhee98/pluck/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hunhee98/pluck/releases/tag/v0.2.0
