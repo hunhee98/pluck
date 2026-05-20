@@ -1186,7 +1186,7 @@ fn expansion_vocab_terms(chunk: &Chunk) -> Vec<String> {
 
 fn is_expansion_vocab_term(term: &str) -> bool {
     let chars = term.chars().count();
-    let has_non_ascii = term.chars().any(|c| !c.is_ascii());
+    let has_non_ascii = !term.is_ascii();
     (chars >= 3 || (has_non_ascii && chars >= 2))
         && !term.chars().all(|c| c.is_ascii_digit())
         && !term.starts_with('_')

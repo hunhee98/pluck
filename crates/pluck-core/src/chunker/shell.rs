@@ -285,6 +285,10 @@ fn is_case_start(code: &str) -> bool {
 
 fn case_arms(lines: &[SourceLine<'_>], block: &CaseBlock) -> Vec<CaseArm> {
     let mut arm_starts = Vec::new();
+    // The range loop is the clearer form here — we push the index, not
+    // the slice element. The clippy lint would suggest a noisier
+    // enumerate / skip / take rewrite that hides the intent.
+    #[allow(clippy::needless_range_loop)]
     for idx in block.start_idx + 1..block.end_idx {
         if is_case_arm_line(lines[idx].text) {
             arm_starts.push(idx);
@@ -334,6 +338,11 @@ fn normalize_case_pattern(line: &str) -> String {
     collapse_ascii_ws(pattern)
 }
 
+// Helper with one job — pushes a finalized chunk into the running
+// list with the line-range / signature plumbing. Folding the eight
+// args into a struct would add an indirection layer without
+// reducing the actual data the chunk needs.
+#[allow(clippy::too_many_arguments)]
 fn push_shell_chunk(
     chunks: &mut Vec<Chunk>,
     src: &str,
