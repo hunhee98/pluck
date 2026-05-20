@@ -6,6 +6,8 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-19
+
 ### Added
 
 - Java chunker support for classes, interfaces, records, annotation types,
@@ -21,6 +23,37 @@ Versioning follows [SemVer](https://semver.org).
   instructions, dependency-manifest copies, and install blocks.
 - Shell chunker support for functions, `case` arms, and major comment-marked
   script sections.
+- Kotlin chunker support for class, interface, enum class, data class, and
+  object declarations, and top-level / member / extension `fun`, with KDoc
+  and `//` line-doc extraction. Receiver-call (`bar.foo`) and chained
+  (`baz.bar.foo`) callees come from `navigation_expression` so call-graph
+  retrieval (`pluck.impact`, `pluck.expand`) follows Kotlin method chains.
+- SQL chunker support for `CREATE TABLE` / `VIEW` / `INDEX` / `FUNCTION` /
+  `TRIGGER` and `ALTER TABLE` migration statements via tree-sitter-sequel,
+  with PL/pgSQL body callees and `--` / `/* */` doc comments. Each `ALTER
+  TABLE` emits a module chunk on the targeted object so migration files
+  surface the touched table even when the original `CREATE TABLE` lives
+  elsewhere. `CREATE PROCEDURE` is not yet supported (grammar limitation;
+  waits on upstream fix or parser swap).
+- Terraform / HCL chunker support for `resource` / `data` / `module` /
+  `variable` / `output` / `provider` / `locals` / `terraform` blocks plus
+  nested blocks (`backend` / `lifecycle` / `required_providers` / `dynamic`).
+  Dotted symbols match HCL's own reference syntax —
+  `resource.aws_s3_bucket.main`, `variable.region`,
+  `data.aws_caller_identity.current` — so a search by either the block
+  type or the addressable form resolves.
+- C chunker support for function definitions and forward declarations
+  (including pointer return), struct / enum / union (standalone and
+  typedef'd, anonymous and named), function-pointer typedefs, object-like
+  and function-like `#define` macros, and `#include` directives (system
+  and project). Inner names of typedef'd named enums and structs index
+  alongside the typedef name so `grep` by either surface lands.
+- C++ chunker support for namespaces (single and nested `a::b`), classes
+  / structs / `enum class` / unions, templated classes and free functions,
+  out-of-class member implementations via `qualified_identifier`, in-class
+  member declarations (regular methods, destructors, operator overloads),
+  `= delete` / `= default` special members, and value / pointer / reference
+  return variants. Macros, typedefs, and `#include`s share the C patterns.
 - Prompt-first agent install flow so unknown MCP-capable agents can
   self-configure pluck with their strongest available rule, hook, allowlist,
   or permission layer.
@@ -191,7 +224,8 @@ Internal development cutline before the first crates.io publish.
 - CI workflows, Claude Code plugin manifest, CONTRIBUTING,
   CODE_OF_CONDUCT, GitHub issue + PR templates.
 
-[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/hunhee98/pluck/releases/tag/v0.5.0
 [0.3.0]: https://github.com/hunhee98/pluck/releases/tag/v0.3.0
 [0.2.0]: https://github.com/hunhee98/pluck/releases/tag/v0.2.0
 [0.1.0]: https://github.com/hunhee98/pluck/releases/tag/v0.1.0
