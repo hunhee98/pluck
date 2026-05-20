@@ -75,10 +75,6 @@ jobs:
     name: build (${{ matrix.target }})
     needs: verify
     runs-on: ${{ matrix.os }}
-    # `continue-on-error` is set per matrix entry below (see
-    # aarch64-unknown-linux-gnu). It's read at the JOB level, so we
-    # surface it via a matrix var rather than inlining.
-    continue-on-error: ${{ matrix.allow-failure || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -89,16 +85,8 @@ jobs:
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # aarch64-linux cross-compile from Ubuntu runners is flaky:
-          # Azure's apt mirror does not host arm64 indexes (returns
-          # `Ign`), so `apt-get install libssl-dev:arm64` fails. The
-          # proper fix is either to add ports.ubuntu.com to
-          # sources.list.d or to use a cross-rs/cross Docker container;
-          # tracked for v0.5.x. Until then this target is best-effort
-          # so a release ships with the 3 binaries that DO build.
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            allow-failure: true
     steps:
       - uses: actions/checkout@v6
         with:
@@ -113,9 +101,36 @@ jobs:
       # OpenSSL. `hf-hub` uses native-tls in the sync downloader, so the
       # release builder must provide arm64 libssl to keep this target in
       # the artifact set.
+      #
+      # The Azure-hosted mirror (`azure.archive.ubuntu.com`) used by GH
+      # runners does NOT publish arm64 package indexes; an
+      # `--add-architecture arm64` + `apt-get install libssl-dev:arm64`
+      # against the default sources fails with exit 100 because every
+      # arm64 Packages fetch is `Ign`-ored. Restrict the default sources
+      # to amd64, then add arm64 sources from `ports.ubuntu.com`
+      # (Canonical's arm64 archive) before installing.
       - name: Install aarch64 cross-toolchain (Linux only)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
+          # Pin existing Ubuntu sources to amd64. Newer runners use the
+          # deb822 .sources format; older ones still use the classic
+          # one-line `deb` format. Handle both.
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          if [ -f /etc/apt/sources.list ]; then
+            sudo sed -i 's|^deb |deb [arch=amd64] |' /etc/apt/sources.list
+          fi
+
+          # Add arm64 sources from ports.ubuntu.com — Canonical's arm64
+          # archive, separate from the Azure-mirrored amd64 archive.
+          codename=$(lsb_release -cs)
+          sudo tee /etc/apt/sources.list.d/arm64.list <<EOF
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $codename main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $codename-updates main restricted universe multiverse
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $codename-security main restricted universe multiverse
+          EOF
+
           sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config libssl-dev:arm64

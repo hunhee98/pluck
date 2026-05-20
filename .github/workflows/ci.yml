@@ -49,6 +49,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ripgrep
 
+      - name: Run clippy
+        # `-D warnings` promotes every clippy lint to an error. Catches
+        # the kind of debt that accumulated invisibly until /release's
+        # pre-flight surfaced it (3 warnings cleared for v0.5.0,
+        # commit 4306c1e). Run before tests so lint fails fast before
+        # the slower full-workspace test suite.
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Run tests
         run: cargo test --all
 
