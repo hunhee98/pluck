@@ -75,6 +75,10 @@ jobs:
     name: build (${{ matrix.target }})
     needs: verify
     runs-on: ${{ matrix.os }}
+    # `continue-on-error` is set per matrix entry below (see
+    # aarch64-unknown-linux-gnu). It's read at the JOB level, so we
+    # surface it via a matrix var rather than inlining.
+    continue-on-error: ${{ matrix.allow-failure || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -85,8 +89,16 @@ jobs:
             os: macos-latest
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+          # aarch64-linux cross-compile from Ubuntu runners is flaky:
+          # Azure's apt mirror does not host arm64 indexes (returns
+          # `Ign`), so `apt-get install libssl-dev:arm64` fails. The
+          # proper fix is either to add ports.ubuntu.com to
+          # sources.list.d or to use a cross-rs/cross Docker container;
+          # tracked for v0.5.x. Until then this target is best-effort
+          # so a release ships with the 3 binaries that DO build.
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            allow-failure: true
     steps:
       - uses: actions/checkout@v6
         with:

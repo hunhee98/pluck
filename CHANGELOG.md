@@ -6,6 +6,17 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Fixed
+
+- Release workflow no longer blocks GitHub Release creation when the
+  `aarch64-unknown-linux-gnu` cross build fails. The target is marked
+  `continue-on-error: true` because Azure-hosted Ubuntu runners cannot
+  fetch arm64 apt indexes through the default mirror, breaking
+  `libssl-dev:arm64` install. Proper fix (ports.ubuntu.com sources or
+  `cross-rs/cross` Docker container) tracked for v0.5.x. Until then a
+  release ships with the three binaries that DO build (x86_64-darwin,
+  aarch64-darwin, x86_64-linux).
+
 ## [0.5.0] — 2026-05-19
 
 ### Added
