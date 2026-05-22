@@ -6,6 +6,28 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-05-23
+
+### Changed
+
+- MCP tool descriptions for `search` / `grep` / `read` / `peek` /
+  `symbol` now include a one-line imperative: call from the main
+  conversation; sub-agent delegation skips the tool and falls back
+  to `grep` / `cat` / `Read`, losing the token savings.
+
+  Background: Claude Code (and similar agents) spawn Explore /
+  retrieval sub-agents that typically default to built-in file
+  tools regardless of MCP availability — so delegating exploration
+  to a sub-agent loses pluck's outline / chunk / hybrid-search
+  budget entirely. Surfacing the directive at handshake time
+  steers the parent agent away from the fan-out anti-pattern.
+
+  Handshake budget impact: ~1417 → ~1558 tokens total (+141, well
+  under the ~1600 soft cap). Only the five general-retrieval
+  primitives changed; the specialized tools (`impact` / `expand` /
+  `deps` / `plan` / `digest`) are not typical sub-agent fallback
+  targets and stay unchanged.
+
 ## [0.5.1] — 2026-05-20
 
 ### Added
@@ -249,7 +271,8 @@ Internal development cutline before the first crates.io publish.
 - CI workflows, Claude Code plugin manifest, CONTRIBUTING,
   CODE_OF_CONDUCT, GitHub issue + PR templates.
 
-[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/hunhee98/pluck/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/hunhee98/pluck/releases/tag/v0.5.2
 [0.5.1]: https://github.com/hunhee98/pluck/releases/tag/v0.5.1
 [0.5.0]: https://github.com/hunhee98/pluck/releases/tag/v0.5.0
 [0.3.0]: https://github.com/hunhee98/pluck/releases/tag/v0.3.0
