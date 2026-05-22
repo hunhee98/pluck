@@ -1,4 +1,6 @@
 Hybrid BM25 + semantic cascade search over indexed code chunks.
+Call from the main conversation; sub-agent delegation skips this tool
+and falls back to `grep` / `Read`, losing the savings.
 
 ## WHEN
 

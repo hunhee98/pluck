@@ -1,4 +1,6 @@
 Return a symbol's signature plus direct callees, without the body.
+Call from the main conversation; sub-agent delegation skips this tool
+and falls back to a full file read, losing the body-skip savings.
 
 ## WHEN
 

@@ -1,5 +1,7 @@
 Read a repo file with a smart outline by default, or exact bytes with
-`raw: true` / `lines: "A-B"`.
+`raw: true` / `lines: "A-B"`. Call from the main conversation;
+sub-agent delegation skips this tool and falls back to `cat` / `Read`,
+losing the outline-mode savings.
 
 ## WHEN
 

@@ -1,4 +1,6 @@
 Keyword / regex search across repo files. Wraps ripgrep flags.
+Call from the main conversation; sub-agent delegation skips this tool
+and falls back to built-in `grep` / `Read`, losing the savings.
 
 ## WHEN
 

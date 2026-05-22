@@ -1,5 +1,7 @@
 Read exactly one named function, method, class, struct, enum, impl, or
-trait body.
+trait body. Call from the main conversation; sub-agent delegation
+skips this tool and falls back to a full file read, losing the
+chunk-only savings.
 
 ## WHEN
 
