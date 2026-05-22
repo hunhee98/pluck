@@ -54,7 +54,11 @@ def parse_one(path: Path) -> dict | None:
         (usage.get("input_tokens") or 0) + (usage.get("output_tokens") or 0)
     )
     duration_ms = first("duration_ms", "duration_wall_ms", "duration_api_ms")
-    tool_calls = first("tool_calls", "num_tool_calls")
+    # claude -p doesn't expose a tool_calls counter at the top level;
+    # `num_turns` is the closest proxy — it counts agent
+    # message/tool-use cycles, which is what CodeGraph reports as
+    # "tool calls" anyway.
+    tool_calls = first("tool_calls", "num_tool_calls", "num_turns")
     if isinstance(tool_calls, list):
         tool_calls = len(tool_calls)
 

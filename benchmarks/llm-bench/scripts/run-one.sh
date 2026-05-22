@@ -80,7 +80,8 @@ if [ -n "${PLUCK_BENCH_MODEL:-}" ]; then
 fi
 
 # Run claude -p inside the repo dir so the agent's default cwd matches
-# the codebase under question.
+# the codebase under question. `${MODEL_ARG[@]+"${MODEL_ARG[@]}"}` is the
+# set -u-safe expansion of an array that may be empty.
 START_TS=$(date +%s)
 (
     cd "$REPO_PATH"
@@ -88,7 +89,7 @@ START_TS=$(date +%s)
         --strict-mcp-config \
         --mcp-config "$MCP_CONFIG" \
         --output-format json \
-        "${MODEL_ARG[@]}" \
+        ${MODEL_ARG[@]+"${MODEL_ARG[@]}"} \
         > "$OUTPUT"
 )
 END_TS=$(date +%s)
