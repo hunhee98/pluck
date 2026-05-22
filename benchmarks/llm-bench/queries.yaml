@@ -1,0 +1,97 @@
+# LLM-in-loop bench queries.
+#
+# First seven are CodeGraph's published queries, copied verbatim so the
+# head-to-head comparison rides on the same architecture-style "How does
+# X do Y" pattern they optimized for. The remaining three are pluck's
+# own questions, chosen to exercise axes where pluck's design (hybrid
+# semantic, impact graph, config-format coverage) is supposed to win.
+
+queries:
+  # ── CodeGraph's seven (verbatim) ────────────────────────────────────
+  - id: vscode_extension_host
+    repo: vscode
+    question: |
+      How does the extension host communicate with the main process?
+    source: codegraph_bench_v1
+
+  - id: excalidraw_canvas
+    repo: excalidraw
+    question: |
+      How does Excalidraw render and update canvas elements?
+    source: codegraph_bench_v1
+
+  - id: django_orm
+    repo: django
+    question: |
+      How does Django's ORM build and execute a query from a QuerySet?
+    source: codegraph_bench_v1
+
+  - id: tokio_scheduler
+    repo: tokio
+    question: |
+      How does tokio schedule and run async tasks on its runtime?
+    source: codegraph_bench_v1
+
+  - id: okhttp_interceptors
+    repo: okhttp
+    question: |
+      How does OkHttp process a request through its interceptor chain?
+    source: codegraph_bench_v1
+
+  - id: gin_middleware
+    repo: gin
+    question: |
+      How does gin route requests through its middleware chain?
+    source: codegraph_bench_v1
+
+  - id: alamofire_request
+    repo: alamofire
+    question: |
+      How does Alamofire build, send, and validate a request?
+    source: codegraph_bench_v1
+
+  # ── Pluck's own three ───────────────────────────────────────────────
+
+  # Axis 1: SEMANTIC INTENT.
+  # Natural-language phrasing with low lexical overlap with code symbols.
+  # Tests whether pluck's hybrid BM25 + static-embedding ranking finds
+  # the right spot when the user's words don't match identifier names.
+  # (CodeGraph: FTS5 text-only.)
+  - id: django_self_edit_permission
+    repo: django
+    question: |
+      Where does Django's auth layer decide whether a logged-in user is
+      allowed to edit their own profile (as opposed to someone else's)?
+    source: pluck_bench_v1
+    differentiation_axis: semantic_intent
+
+  # Axis 2: REFACTOR IMPACT.
+  # "If I rename X to Y, what call sites break?" — exercises a
+  # callgraph traversal, the use-case for `pluck.impact`. CodeGraph has
+  # impact analysis too; this one is shared-strength territory but
+  # answers a refactor question, not an architecture-discovery one.
+  - id: tokio_spawn_rename
+    repo: tokio
+    question: |
+      If I rename `tokio::spawn` to `tokio::launch`, every file in this
+      repo that calls `spawn` needs to be updated. List the callers
+      grouped by module, and flag any indirect call sites (passed as
+      a function pointer, used in a macro, etc.).
+    source: pluck_bench_v1
+    differentiation_axis: refactor_impact
+
+  # Axis 3: CONFIG / INFRA FORMAT.
+  # Question that requires reading YAML / Dockerfile / Markdown
+  # together. Pluck indexes all three; CodeGraph does not index any.
+  # This is the clearest differentiation case in the bench — if pluck
+  # does NOT win here, the format-coverage claim is rhetorically weak.
+  - id: kube_website_versioning
+    repo: kubernetes-website
+    question: |
+      The Kubernetes docs site is built and deployed via this repo.
+      How does the build pick which Kubernetes version a given doc
+      page belongs to, and how are multi-version doc archives served?
+      Cite the config files (Dockerfile, hugo.toml, deploy YAML, etc.)
+      AND the build scripts that read them.
+    source: pluck_bench_v1
+    differentiation_axis: config_format_coverage

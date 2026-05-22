@@ -1,0 +1,55 @@
+# LLM-in-loop bench corpus.
+#
+# Seven of these are taken verbatim from CodeGraph's published
+# benchmark (https://github.com/colbymchenry/codegraph) so the head-to-
+# head comparison rides on the same repos / queries as theirs. The
+# eighth (`kubernetes/website`) is added by us to exercise pluck's
+# config-format coverage (YAML / JSON / Dockerfile) which CodeGraph
+# does not index.
+
+repos:
+  # ── CodeGraph's seven ───────────────────────────────────────────────
+  - id: vscode
+    url: https://github.com/microsoft/vscode.git
+    rev: main
+    primary_language: typescript
+
+  - id: excalidraw
+    url: https://github.com/excalidraw/excalidraw.git
+    rev: master
+    primary_language: typescript
+
+  - id: django
+    url: https://github.com/django/django.git
+    rev: main
+    primary_language: python
+
+  - id: tokio
+    url: https://github.com/tokio-rs/tokio.git
+    rev: master
+    primary_language: rust
+
+  - id: okhttp
+    url: https://github.com/square/okhttp.git
+    rev: master
+    primary_language: java
+
+  - id: gin
+    url: https://github.com/gin-gonic/gin.git
+    rev: master
+    primary_language: go
+
+  - id: alamofire
+    url: https://github.com/Alamofire/Alamofire.git
+    rev: master
+    primary_language: swift
+
+  # ── Pluck's own (added to exercise differentiation axes) ────────────
+  - id: kubernetes-website
+    url: https://github.com/kubernetes/website.git
+    rev: main
+    primary_language: yaml
+    # Heavy on config formats (Dockerfile, YAML, Markdown). CodeGraph
+    # does not index these; pluck does. This repo lets us measure
+    # whether the format-coverage advantage translates into LLM-loop
+    # task savings.
