@@ -95,6 +95,10 @@ START_TS=$(date +%s)
 END_TS=$(date +%s)
 echo "[run] $QUERY_ID / $ARM / run$RUN_IDX done in $((END_TS - START_TS))s"
 
-# Tidy temp files.
+# Tidy temp files. Use an if-block, NOT `[ test ] && rm`: on the empty
+# arm the test is false and a trailing `&&` chain exits non-zero, which
+# under `set -e` aborts the run-all.sh batch loop on its first empty run.
 rm -f "$QUESTION_FILE"
-[ "$ARM" = "with-pluck" ] && rm -f "$MCP_CONFIG"
+if [ "$ARM" = "with-pluck" ]; then
+    rm -f "$MCP_CONFIG"
+fi
