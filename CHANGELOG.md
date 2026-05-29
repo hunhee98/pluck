@@ -19,6 +19,9 @@ Versioning follows [SemVer](https://semver.org).
   (`def self.x`) definitions via tree-sitter-ruby, with `#` doc comments
   and method-call callees. `require` / `require_relative` surface as
   callees rather than imports (Ruby has no static import statement).
+- **PHP chunker** (`.php`). class, interface, trait, enum, function,
+  method, and namespace declarations via tree-sitter-php, with `//` doc
+  comments, `use` imports, and function / method / static-call callees.
 
 ## [0.5.2] — 2026-05-23
 
