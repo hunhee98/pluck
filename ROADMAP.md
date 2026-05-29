@@ -216,7 +216,7 @@ Close the next high-signal language gaps after Java and repo formats.
 
 Round out the long-tail repos agents still touch every day.
 
-- [ ] Ruby chunker.
+- [x] Ruby chunker.
 - [ ] PHP chunker.
 - [x] Swift chunker.
 - [ ] Vue single-file component chunker: template, script, style, and nested

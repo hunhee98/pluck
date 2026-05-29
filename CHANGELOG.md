@@ -15,6 +15,10 @@ Versioning follows [SemVer](https://semver.org).
   dotted paths such as `import os.log`), and plain + method-call
   callees are extracted. First member of the v0.6 app-framework
   language tier.
+- **Ruby chunker** (`.rb`). class, module, method, and singleton-method
+  (`def self.x`) definitions via tree-sitter-ruby, with `#` doc comments
+  and method-call callees. `require` / `require_relative` surface as
+  callees rather than imports (Ruby has no static import statement).
 
 ## [0.5.2] — 2026-05-23
 
