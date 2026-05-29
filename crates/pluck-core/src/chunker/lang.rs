@@ -21,6 +21,7 @@ pub enum Lang {
     Markdown,
     Mdx,
     Swift,
+    Ruby,
     Json,
     Yaml,
     Toml,
@@ -71,6 +72,7 @@ impl Lang {
             "md" | "markdown" => Some(Self::Markdown),
             "mdx" => Some(Self::Mdx),
             "swift" => Some(Self::Swift),
+            "rb" => Some(Self::Ruby),
             "json" => Some(Self::Json),
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
@@ -99,6 +101,7 @@ impl Lang {
             Self::Scss => tree_sitter_scss::language(),
             Self::Markdown | Self::Mdx => tree_sitter_md_025::LANGUAGE.into(),
             Self::Swift => tree_sitter_swift::LANGUAGE.into(),
+            Self::Ruby => tree_sitter_ruby::LANGUAGE.into(),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => {
                 unreachable!("custom formats do not use tree-sitter")
             }
@@ -124,6 +127,7 @@ impl Lang {
             Self::Scss => include_str!("queries/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/markdown.scm"),
             Self::Swift => include_str!("queries/swift.scm"),
+            Self::Ruby => include_str!("queries/ruby.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -149,6 +153,7 @@ impl Lang {
             Self::Scss => include_str!("queries/callees/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/callees/markdown.scm"),
             Self::Swift => include_str!("queries/callees/swift.scm"),
+            Self::Ruby => include_str!("queries/callees/ruby.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -176,6 +181,7 @@ impl Lang {
             Self::Scss => include_str!("queries/imports/scss.scm"),
             Self::Markdown | Self::Mdx => include_str!("queries/imports/markdown.scm"),
             Self::Swift => include_str!("queries/imports/swift.scm"),
+            Self::Ruby => include_str!("queries/imports/ruby.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -275,6 +281,10 @@ impl Lang {
             Self::Swift => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Swift)).as_ref()
+            }
+            Self::Ruby => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Ruby)).as_ref()
             }
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => None,
         }

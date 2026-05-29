@@ -360,7 +360,9 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::C
         | Language::Cpp
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
-        Language::Python => line.strip_prefix('#').map(|s| s.trim().to_string()),
+        Language::Python | Language::Ruby => {
+            line.strip_prefix('#').map(|s| s.trim().to_string())
+        }
         Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
         Language::Hcl => line
             .strip_prefix("//")
@@ -2972,6 +2974,85 @@ extension String {
             result.imports.contains(&"os.log".to_string()),
             "missing dotted import: {:?}",
             result.imports
+        );
+    }
+
+    // ── Ruby ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_ruby_class_module_method_and_singleton() {
+        assert_eq!(Language::from_extension("rb"), Some(Language::Ruby));
+
+        let src = r#"
+require "json"
+require_relative "store"
+
+module Auth
+  class Service
+    def initialize(store)
+      @store = store
+    end
+
+    def verify(token)
+      @store.lookup(token)
+    end
+
+    def self.build
+      new(TokenStore.new)
+    end
+  end
+
+  module Helpers
+    def normalize(token)
+      token.strip.downcase
+    end
+  end
+end
+"#;
+        let result = chunk_source_with_meta(src, Language::Ruby).unwrap();
+        assert!(!result.parse_errors, "Ruby parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"Auth"), "missing module: {result:?}");
+        assert!(names.contains(&"Service"), "missing class: {result:?}");
+        assert!(
+            names.contains(&"verify"),
+            "missing instance method: {result:?}"
+        );
+        assert!(
+            names.contains(&"build"),
+            "missing singleton method: {result:?}"
+        );
+        assert!(
+            names.contains(&"Helpers"),
+            "missing nested module: {result:?}"
+        );
+        assert!(
+            names.contains(&"normalize"),
+            "missing module method: {result:?}"
+        );
+
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "Auth" && c.kind == ChunkKind::Module),
+            "Auth should be Module kind: {result:?}"
+        );
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "Service" && c.kind == ChunkKind::Class),
+            "Service should be Class kind: {result:?}"
+        );
+
+        let verify = result.chunks.iter().find(|c| c.symbol == "verify").unwrap();
+        assert_eq!(verify.kind, ChunkKind::Method);
+        assert!(
+            verify.callees.contains(&"lookup".to_string()),
+            "verify callees missing lookup: {:?}",
+            verify.callees
         );
     }
 
