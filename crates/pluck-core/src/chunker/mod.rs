@@ -348,6 +348,9 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("///")
             .or_else(|| line.strip_prefix("//!"))
             .map(|s| s.trim().to_string()),
+        // Swift doc comments are `///` (Rust-style); plain `//` is an ordinary
+        // comment, so it must not be treated as a doc line.
+        Language::Swift => line.strip_prefix("///").map(|s| s.trim().to_string()),
         Language::TypeScript
         | Language::Tsx
         | Language::JavaScript
@@ -2877,6 +2880,99 @@ cleanup () {
             .unwrap();
         assert_eq!(prod.kind, ChunkKind::Module);
         assert!(prod.content.contains("deploy-prod"));
+    }
+
+    // ── Swift ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_swift_class_struct_protocol_extension_and_imports() {
+        assert_eq!(Language::from_extension("swift"), Some(Language::Swift));
+
+        let src = r#"
+import Foundation
+import os.log
+
+/// Token lifecycle operations.
+class AuthService {
+    let store: TokenStore
+
+    init(store: TokenStore) {
+        self.store = store
+    }
+
+    func verify(_ token: String) -> Bool {
+        return store.lookup(token) != nil
+    }
+}
+
+struct LoginRequest {
+    let token: String
+}
+
+protocol TokenStore {
+    func lookup(_ token: String) -> String?
+}
+
+enum AuthStatus {
+    case valid
+    case expired
+}
+
+extension String {
+    func normalizeToken() -> String {
+        return trimmingCharacters(in: .whitespaces).lowercased()
+    }
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Swift).unwrap();
+        assert!(!result.parse_errors, "Swift parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"AuthService"), "missing class: {result:?}");
+        assert!(names.contains(&"verify"), "missing member func: {result:?}");
+        assert!(
+            names.contains(&"LoginRequest"),
+            "missing struct: {result:?}"
+        );
+        assert!(
+            names.contains(&"TokenStore"),
+            "missing protocol: {result:?}"
+        );
+        assert!(names.contains(&"AuthStatus"), "missing enum: {result:?}");
+        assert!(
+            names.contains(&"normalizeToken"),
+            "missing extension method: {result:?}"
+        );
+
+        let class = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "AuthService" && c.kind == ChunkKind::Class)
+            .expect("AuthService class missing");
+        assert!(
+            class.doc_comment.contains("Token lifecycle operations"),
+            "missing /// doc: {:?}",
+            class.doc_comment
+        );
+
+        let verify = result.chunks.iter().find(|c| c.symbol == "verify").unwrap();
+        assert_eq!(verify.kind, ChunkKind::Method);
+        assert!(
+            verify.callees.contains(&"lookup".to_string()),
+            "verify callees missing lookup: {:?}",
+            verify.callees
+        );
+
+        assert!(
+            result.imports.contains(&"Foundation".to_string()),
+            "missing import: {:?}",
+            result.imports
+        );
+        assert!(
+            result.imports.contains(&"os.log".to_string()),
+            "missing dotted import: {:?}",
+            result.imports
+        );
     }
 
     #[test]
