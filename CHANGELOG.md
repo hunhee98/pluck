@@ -6,6 +6,16 @@ Versioning follows [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- **Swift chunker** (`.swift`). pluck now chunks Swift source: class,
+  struct, enum, extension, and actor declarations, protocols, and
+  function / initializer / deinitializer definitions, via
+  tree-sitter-swift. `///` doc comments, module imports (including
+  dotted paths such as `import os.log`), and plain + method-call
+  callees are extracted. First member of the v0.6 app-framework
+  language tier.
+
 ## [0.5.2] — 2026-05-23
 
 ### Changed

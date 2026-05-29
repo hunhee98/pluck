@@ -218,7 +218,7 @@ Round out the long-tail repos agents still touch every day.
 
 - [ ] Ruby chunker.
 - [ ] PHP chunker.
-- [ ] Swift chunker.
+- [x] Swift chunker.
 - [ ] Vue single-file component chunker: template, script, style, and nested
       JS/TS/CSS chunks.
 - [ ] Svelte single-file component chunker.
