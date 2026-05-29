@@ -17,6 +17,9 @@ Cargo.lock.bak
 # Benchmark artifacts
 /benchmarks/results/*.json
 /benchmarks/repos/*/
+# LLM-in-loop bench: cloned upstream repos (~1.2 GB) are ignored.
+# results/*.json ARE committed (honest-reporting policy — see llm-bench/README.md).
+/benchmarks/llm-bench/repos/
 
 # Local index store
 /.pluck/
