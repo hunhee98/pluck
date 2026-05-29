@@ -359,6 +359,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Kotlin
         | Language::C
         | Language::Cpp
+        | Language::Php
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
         Language::Python | Language::Ruby => {
             line.strip_prefix('#').map(|s| s.trim().to_string())
@@ -3053,6 +3054,93 @@ end
             verify.callees.contains(&"lookup".to_string()),
             "verify callees missing lookup: {:?}",
             verify.callees
+        );
+    }
+
+    // ── PHP ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_php_class_interface_trait_function_method_and_use() {
+        assert_eq!(Language::from_extension("php"), Some(Language::Php));
+
+        let src = r#"<?php
+
+namespace App\Auth;
+
+use App\Store\TokenStore;
+use Psr\Log\LoggerInterface;
+
+interface Verifier
+{
+    public function check(string $token): bool;
+}
+
+trait Logs
+{
+    public function record(string $msg): void
+    {
+        $this->logger->info($msg);
+    }
+}
+
+class Service implements Verifier
+{
+    public function __construct(private TokenStore $store) {}
+
+    public function verify(string $token): bool
+    {
+        return $this->store->lookup($token) !== null;
+    }
+}
+
+function normalize(string $token): string
+{
+    return strtolower(trim($token));
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::Php).unwrap();
+        assert!(!result.parse_errors, "PHP parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"Verifier"), "missing interface: {result:?}");
+        assert!(names.contains(&"Logs"), "missing trait: {result:?}");
+        assert!(names.contains(&"Service"), "missing class: {result:?}");
+        assert!(names.contains(&"verify"), "missing method: {result:?}");
+        assert!(
+            names.contains(&"normalize"),
+            "missing function: {result:?}"
+        );
+
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "Logs" && c.kind == ChunkKind::Trait),
+            "Logs should be Trait kind: {result:?}"
+        );
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "normalize" && c.kind == ChunkKind::Function),
+            "normalize should be Function kind: {result:?}"
+        );
+
+        let verify = result
+            .chunks
+            .iter()
+            .find(|c| c.symbol == "verify" && c.kind == ChunkKind::Method)
+            .expect("verify method missing");
+        assert!(
+            verify.callees.contains(&"lookup".to_string()),
+            "verify callees missing lookup: {:?}",
+            verify.callees
+        );
+
+        assert!(
+            result.imports.iter().any(|i| i.contains("TokenStore")),
+            "missing use import: {:?}",
+            result.imports
         );
     }
 

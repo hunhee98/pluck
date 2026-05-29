@@ -29,6 +29,7 @@ tree-sitter-scss.workspace = true
 tree-sitter-md-025.workspace = true
 tree-sitter-swift.workspace = true
 tree-sitter-ruby.workspace = true
+tree-sitter-php.workspace = true
 tantivy.workspace = true
 rusqlite.workspace = true
 notify.workspace = true
