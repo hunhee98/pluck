@@ -23,6 +23,7 @@ pub enum Lang {
     Swift,
     Ruby,
     Php,
+    Svelte,
     Json,
     Yaml,
     Toml,
@@ -75,6 +76,7 @@ impl Lang {
             "swift" => Some(Self::Swift),
             "rb" => Some(Self::Ruby),
             "php" => Some(Self::Php),
+            "svelte" => Some(Self::Svelte),
             "json" => Some(Self::Json),
             "yaml" | "yml" => Some(Self::Yaml),
             "toml" => Some(Self::Toml),
@@ -105,6 +107,7 @@ impl Lang {
             Self::Swift => tree_sitter_swift::LANGUAGE.into(),
             Self::Ruby => tree_sitter_ruby::LANGUAGE.into(),
             Self::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+            Self::Svelte => tree_sitter_svelte_ng::LANGUAGE.into(),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => {
                 unreachable!("custom formats do not use tree-sitter")
             }
@@ -132,6 +135,7 @@ impl Lang {
             Self::Swift => include_str!("queries/swift.scm"),
             Self::Ruby => include_str!("queries/ruby.scm"),
             Self::Php => include_str!("queries/php.scm"),
+            Self::Svelte => include_str!("queries/svelte.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -159,6 +163,7 @@ impl Lang {
             Self::Swift => include_str!("queries/callees/swift.scm"),
             Self::Ruby => include_str!("queries/callees/ruby.scm"),
             Self::Php => include_str!("queries/callees/php.scm"),
+            Self::Svelte => include_str!("queries/callees/svelte.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -188,6 +193,7 @@ impl Lang {
             Self::Swift => include_str!("queries/imports/swift.scm"),
             Self::Ruby => include_str!("queries/imports/ruby.scm"),
             Self::Php => include_str!("queries/imports/php.scm"),
+            Self::Svelte => include_str!("queries/imports/svelte.scm"),
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => "",
         }
     }
@@ -295,6 +301,10 @@ impl Lang {
             Self::Php => {
                 static Q: OnceLock<Option<Query>> = OnceLock::new();
                 Q.get_or_init(|| build(Self::Php)).as_ref()
+            }
+            Self::Svelte => {
+                static Q: OnceLock<Option<Query>> = OnceLock::new();
+                Q.get_or_init(|| build(Self::Svelte)).as_ref()
             }
             Self::Json | Self::Yaml | Self::Toml | Self::Dockerfile | Self::Shell => None,
         }

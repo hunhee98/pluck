@@ -369,7 +369,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
             .strip_prefix("//")
             .or_else(|| line.strip_prefix('#'))
             .map(|s| s.trim().to_string()),
-        Language::Html => line
+        Language::Html | Language::Svelte => line
             .strip_prefix("<!--")
             .and_then(|s| s.strip_suffix("-->"))
             .map(|s| s.trim().to_string()),
@@ -3141,6 +3141,52 @@ function normalize(string $token): string
             result.imports.iter().any(|i| i.contains("TokenStore")),
             "missing use import: {:?}",
             result.imports
+        );
+    }
+
+    // ── Svelte ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_svelte_script_style_and_markup_chunks() {
+        assert_eq!(Language::from_extension("svelte"), Some(Language::Svelte));
+
+        let src = r#"<script lang="ts">
+  import { onMount } from "svelte";
+  let count = 0;
+  function increment() {
+    count += 1;
+  }
+</script>
+
+<main class="counter">
+  <button on:click={increment}>
+    Count: {count}
+  </button>
+</main>
+
+<style>
+  button {
+    color: blue;
+  }
+</style>
+"#;
+        let result = chunk_source_with_meta(src, Language::Svelte).unwrap();
+        assert!(!result.parse_errors, "Svelte parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(
+            names.contains(&"script"),
+            "missing script chunk: {result:?}"
+        );
+        assert!(names.contains(&"style"), "missing style chunk: {result:?}");
+
+        let script = result.chunks.iter().find(|c| c.symbol == "script").unwrap();
+        assert_eq!(script.kind, ChunkKind::Module);
+        // The <script> body is preserved verbatim (raw_text, not symbol-parsed).
+        assert!(
+            script.content.contains("function increment"),
+            "script body should include raw JS: {:?}",
+            script.content
         );
     }
 
