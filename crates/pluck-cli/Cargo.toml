@@ -15,7 +15,7 @@ name = "pluck"
 path = "src/main.rs"
 
 [dependencies]
-pluck-core = { path = "../pluck-core", version = "0.5.2" }
+pluck-core = { path = "../pluck-core", version = "0.6.0" }
 clap.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
