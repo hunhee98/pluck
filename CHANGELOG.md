@@ -27,6 +27,9 @@ Versioning follows [SemVer](https://semver.org).
   `<script>` stays verbatim (raw text in this grammar); symbol-level
   callee/import extraction there is future work. Vue and Astro remain
   pending — no crates.io grammar yet matches our tree-sitter version.
+- **GraphQL schema chunker** (`.graphql`, `.gql`). object / interface /
+  input types, enums, scalars, unions, directives, and named operations
+  / fragments become chunks via tree-sitter-graphql, with `#` comments.
 
 ## [0.5.2] — 2026-05-23
 

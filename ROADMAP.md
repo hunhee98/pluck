@@ -28,7 +28,7 @@ expand, session dedup).
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
 | v0.5 systems + JVM | 🟡 chunker wave complete — Kotlin, SQL, HCL, C, and C++ landed on main; fixtures consolidation + NDCG breakdown remain |
-| v0.6 app-framework tier | 🟡 in progress — Ruby, PHP, Swift, Svelte landed on main; OpenAPI/GraphQL + "20+ formats" claim remain. Vue/Astro deferred to v0.9 (grammar ABI) |
+| v0.6 app-framework tier | 🟡 in progress — Ruby, PHP, Swift, Svelte, GraphQL landed on main; OpenAPI (eval) + "20+ formats" claim remain. Vue/Astro deferred to v0.9 (grammar ABI) |
 
 ---
 
@@ -225,7 +225,12 @@ availability, so they do not hold this milestone hostage.
 - [x] PHP chunker.
 - [x] Swift chunker.
 - [x] Svelte single-file component chunker.
-- [ ] OpenAPI / GraphQL schema chunker.
+- [x] GraphQL schema chunker (SDL: types, interfaces, enums, scalars,
+      unions, directives, named operations / fragments).
+- [ ] OpenAPI schema chunker — evaluate whether a dedicated chunker
+      beats the existing JSON/YAML config chunker (OpenAPI is JSON/YAML;
+      the win would be path/operation/component-schema semantics, not
+      raw key chunks). Ship only if it measurably improves retrieval.
 - [ ] "20+ code and project formats" README claim backed by tests.
 
 ---
