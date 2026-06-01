@@ -31,6 +31,7 @@ tree-sitter-swift.workspace = true
 tree-sitter-ruby.workspace = true
 tree-sitter-php.workspace = true
 tree-sitter-svelte-ng.workspace = true
+tree-sitter-graphql.workspace = true
 tantivy.workspace = true
 rusqlite.workspace = true
 notify.workspace = true

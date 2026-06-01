@@ -361,7 +361,7 @@ fn clean_line_doc(lang: Language, line: &str) -> Option<String> {
         | Language::Cpp
         | Language::Php
         | Language::Scss => line.strip_prefix("//").map(|s| s.trim().to_string()),
-        Language::Python | Language::Ruby => {
+        Language::Python | Language::Ruby | Language::GraphQl => {
             line.strip_prefix('#').map(|s| s.trim().to_string())
         }
         Language::Sql => line.strip_prefix("--").map(|s| s.trim().to_string()),
@@ -3188,6 +3188,90 @@ function normalize(string $token): string
             "script body should include raw JS: {:?}",
             script.content
         );
+    }
+
+    // ── GraphQL ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_graphql_type_interface_enum_input_and_operation() {
+        assert_eq!(Language::from_extension("graphql"), Some(Language::GraphQl));
+        assert_eq!(Language::from_extension("gql"), Some(Language::GraphQl));
+
+        let src = r#"
+"User-facing account."
+type User implements Node {
+  id: ID!
+  email: String!
+}
+
+interface Node {
+  id: ID!
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+input CreateUserInput {
+  email: String!
+}
+
+scalar DateTime
+
+union SearchResult = User | Post
+
+query GetUser($id: ID!) {
+  user(id: $id) {
+    email
+  }
+}
+
+fragment UserFields on User {
+  id
+  email
+}
+"#;
+        let result = chunk_source_with_meta(src, Language::GraphQl).unwrap();
+        assert!(!result.parse_errors, "GraphQL parse errors: {result:?}");
+
+        let names: Vec<&str> = result.chunks.iter().map(|c| c.symbol.as_str()).collect();
+        assert!(names.contains(&"User"), "missing type: {result:?}");
+        assert!(names.contains(&"Node"), "missing interface: {result:?}");
+        assert!(names.contains(&"Role"), "missing enum: {result:?}");
+        assert!(
+            names.contains(&"CreateUserInput"),
+            "missing input: {result:?}"
+        );
+        assert!(names.contains(&"DateTime"), "missing scalar: {result:?}");
+        assert!(
+            names.contains(&"SearchResult"),
+            "missing union: {result:?}"
+        );
+        assert!(names.contains(&"GetUser"), "missing operation: {result:?}");
+        assert!(
+            names.contains(&"UserFields"),
+            "missing fragment: {result:?}"
+        );
+
+        // `type User` resolves to Class kind (GraphQL object type).
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "User" && c.kind == ChunkKind::Class),
+            "User should be Class kind: {result:?}"
+        );
+        assert!(
+            result
+                .chunks
+                .iter()
+                .any(|c| c.symbol == "Role" && c.kind == ChunkKind::Enum),
+            "Role should be Enum kind: {result:?}"
+        );
+        // NB: GraphQL `"""..."""` / "..." descriptions are a distinct string
+        // node, not a line comment, so leading_doc_comment does not capture
+        // them. Description-as-doc is future work.
     }
 
     #[test]
