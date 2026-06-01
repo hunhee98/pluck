@@ -28,6 +28,7 @@ expand, session dedup).
 | Retrieval quality (peek / expand / BM25F / ranking) | ✅ shipped — v0.3.0 |
 | v0.4 release train | 🟡 in progress — Java, HTML, CSS/SCSS, Markdown/MDX, YAML/JSON/TOML, Dockerfile, Shell, official agent setup prompt, TSX fixes landed on main |
 | v0.5 systems + JVM | 🟡 chunker wave complete — Kotlin, SQL, HCL, C, and C++ landed on main; fixtures consolidation + NDCG breakdown remain |
+| v0.6 app-framework tier | 🟡 in progress — Ruby, PHP, Swift, Svelte landed on main; OpenAPI/GraphQL + "20+ formats" claim remain. Vue/Astro deferred to v0.9 (grammar ABI) |
 
 ---
 
@@ -214,15 +215,16 @@ Close the next high-signal language gaps after Java and repo formats.
 
 ## v0.6.0 — app-framework tier
 
-Round out the long-tail repos agents still touch every day.
+Round out the long-tail repos agents still touch every day. Scope is
+limited to work we can land ourselves; component frameworks whose
+tree-sitter grammars are not yet compatible with our parser version
+(Vue, Astro) are tracked under v0.9.0 — ecosystem, gated on grammar
+availability, so they do not hold this milestone hostage.
 
 - [x] Ruby chunker.
 - [x] PHP chunker.
 - [x] Swift chunker.
-- [ ] Vue single-file component chunker: template, script, style, and nested
-      JS/TS/CSS chunks.
 - [x] Svelte single-file component chunker.
-- [ ] Astro single-file component chunker.
 - [ ] OpenAPI / GraphQL schema chunker.
 - [ ] "20+ code and project formats" README claim backed by tests.
 
@@ -303,6 +305,13 @@ Turn retrieval into workflow memory and meet agents where users already work.
 - [ ] Cursor extension thin wrapper.
 - [ ] Cline / Continue integration.
 - [ ] `find-pattern`: thin `ast-grep` wrapper.
+- [ ] Vue single-file component chunker: template, script, style, and nested
+      JS/TS/CSS chunks. **Gated on grammar availability** — `tree-sitter-vue`
+      ships only 0.0.x pinned to tree-sitter ^0.20, incompatible with our
+      0.25 parser. Promote to a near-term milestone once a compatible
+      grammar (or a maintained fork) lands on crates.io.
+- [ ] Astro single-file component chunker. **Gated on grammar availability**
+      — no `tree-sitter-astro` crate exists on crates.io yet.
 
 ---
 
