@@ -22,6 +22,11 @@ Versioning follows [SemVer](https://semver.org).
 - **PHP chunker** (`.php`). class, interface, trait, enum, function,
   method, and namespace declarations via tree-sitter-php, with `//` doc
   comments, `use` imports, and function / method / static-call callees.
+- **Svelte SFC chunker** (`.svelte`). `<script>`, `<style>`, and markup
+  elements become chunks via tree-sitter-svelte-ng. The JS/TS inside
+  `<script>` stays verbatim (raw text in this grammar); symbol-level
+  callee/import extraction there is future work. Vue and Astro remain
+  pending — no crates.io grammar yet matches our tree-sitter version.
 
 ## [0.5.2] — 2026-05-23
 
