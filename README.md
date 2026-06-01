@@ -241,6 +241,26 @@ Broader LLM-in-the-loop measurements across `fix` / `refactor` / `explore` / `se
 | Build / CI / test log compression (`digest`) | ✗ | ✗ | **✓ — 71 % median** |
 | Exploration recommender (`plan`) | ✗ | ✗ | **✓** |
 
+## Supported formats
+
+pluck AST-chunks **20+ code and project formats** (26 today) via
+Tree-sitter. Every format below is covered by a chunker unit test in
+[`crates/pluck-core/src/chunker`](crates/pluck-core/src/chunker); the
+list is the `Lang` enum in
+[`lang.rs`](crates/pluck-core/src/chunker/lang.rs), so this section and
+the code cannot drift.
+
+| Group | Formats |
+|-------|---------|
+| **Languages** | Rust, TypeScript, TSX, JavaScript, Python, Go, Java, Kotlin, Swift, Ruby, PHP, C, C++ |
+| **Web / component** | HTML, CSS, SCSS, Svelte |
+| **Data / config** | JSON, YAML, TOML, SQL, HCL / Terraform |
+| **Schema / docs / infra** | GraphQL, Markdown, MDX, Dockerfile, Shell |
+
+Anything not in this list still works through `pluck.read --raw` /
+`pluck.grep` (byte-equivalent to `cat` / `rg`); it just doesn't get
+AST-level chunking.
+
 ## Roadmap
 
 Versioning details live in [`docs/VERSIONING.md`](docs/VERSIONING.md).

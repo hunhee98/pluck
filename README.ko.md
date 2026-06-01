@@ -237,6 +237,26 @@ pluck read src/auth/login.ts --raw  # 바이트 단위 cat과 동일
 | 빌드 / CI / 테스트 로그 압축 (`digest`) | ✗ | ✗ | **✓ — 중앙값 71 %** |
 | 탐색 추천기 (`plan`) | ✗ | ✗ | **✓** |
 
+## 지원 포맷
+
+pluck은 Tree-sitter로 **20개 이상의 코드·프로젝트 포맷**(현재 26개)을
+AST 단위로 청킹합니다. 아래 모든 포맷은
+[`crates/pluck-core/src/chunker`](crates/pluck-core/src/chunker)의 청커
+단위 테스트로 검증되며, 이 목록은
+[`lang.rs`](crates/pluck-core/src/chunker/lang.rs)의 `Lang` enum 그대로라
+문서와 코드가 어긋날 수 없습니다.
+
+| 분류 | 포맷 |
+|------|------|
+| **언어** | Rust, TypeScript, TSX, JavaScript, Python, Go, Java, Kotlin, Swift, Ruby, PHP, C, C++ |
+| **웹 / 컴포넌트** | HTML, CSS, SCSS, Svelte |
+| **데이터 / 설정** | JSON, YAML, TOML, SQL, HCL / Terraform |
+| **스키마 / 문서 / 인프라** | GraphQL, Markdown, MDX, Dockerfile, Shell |
+
+목록에 없는 포맷도 `pluck.read --raw` / `pluck.grep`로 동작하며
+(`cat` / `rg`와 바이트 단위로 동일), 단지 AST 단위 청킹이 적용되지 않을
+뿐입니다.
+
 ## 로드맵
 
 - **v0.2.0**: crates.io 첫 발행, MCP 툴, 세션 중복 제거, 스마트 아웃라인,
