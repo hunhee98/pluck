@@ -221,7 +221,7 @@ Round out the long-tail repos agents still touch every day.
 - [x] Swift chunker.
 - [ ] Vue single-file component chunker: template, script, style, and nested
       JS/TS/CSS chunks.
-- [ ] Svelte single-file component chunker.
+- [x] Svelte single-file component chunker.
 - [ ] Astro single-file component chunker.
 - [ ] OpenAPI / GraphQL schema chunker.
 - [ ] "20+ code and project formats" README claim backed by tests.
