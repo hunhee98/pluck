@@ -1,8 +1,8 @@
 class Pluck < Formula
   desc "Fast and token-friendly code reading for AI coding agents"
   homepage "https://github.com/hunhee98/pluck"
-  url "https://github.com/hunhee98/pluck/archive/refs/tags/v0.5.2.tar.gz"
-  sha256 "86bac92e6fe3506027fef131438acde0566248ec0cb296a40fa75d26a025d4fe"
+  url "https://github.com/hunhee98/pluck/archive/refs/tags/v0.6.0.tar.gz"
+  sha256 "33eb4f57715f6219dbc5310424d243b1e7c13ba05f57e361fac133f34c990684"
   license "MIT"
   head "https://github.com/hunhee98/pluck.git", branch: "main"
 
